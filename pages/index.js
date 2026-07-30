@@ -239,11 +239,11 @@ export default function Home() {
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！下次請用新pid登入。');
+      setMsg('密碼已成功修改為新密碼！');
     }
   }
 
-  // 📸 強化版 OCR 掃描：針對 Artale 左下角 LV 方塊與 EXP 格式進行深度最佳化
+  // 📸 最佳化行解析 OCR 掃描：穩健過濾與抓取等級和經驗值
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -253,7 +253,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在深度解析 Artale 介面數據...');
+    setMsg('⚡ 正在精準解析截圖數據...');
 
     try {
       const reader = new FileReader();
@@ -266,54 +266,59 @@ export default function Home() {
           const flattenedText = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
           const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-          // --- 1. 🎯 角色名稱比對 ---
+          // --- 1. 角色名稱比對 ---
           if (loggedInUser) {
             if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
               setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
             } else {
-              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，請確認截圖正確，幹部後台會進行最終審核。`);
+              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，幹部後台會進行最終審核。`);
             }
           }
 
-          // --- 2. 🎯 針對 Artale 左下角 LV 方塊的極限等級抓取 ---
+          // --- 2. 穩健等級解析 ---
           let detectedLv = '';
-          // 支援 LV. 173、LV 173、甚至被拆開的數字
-          const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || 
-                          flattenedText.match(/(?:lv|l\/|lvl|level)(\d{1,3})/);
-          
-          if (lvMatch && lvMatch[1]) {
-            detectedLv = lvMatch[1];
-          } else {
-            // 如果沒抓到關鍵字，直接在整張圖所有 3 位數中尋找最合理的等級範圍 (100 ~ 200，其次 50 ~ 99)
-            const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-            if (nums && nums.length > 0) {
-              const numericList = nums.map(Number);
-              const highLvs = numericList.filter(n => n >= 100 && n <= 200);
-              if (highLvs.length > 0) {
-                detectedLv = String(highLvs[0]);
-              } else {
-                const midLvs = numericList.filter(n => n >= 50 && n <= 99);
-                detectedLv = midLvs.length > 0 ? String(midLvs[0]) : String(numericList[0]);
+          let detectedExp = '';
+          const lines = rawText.split('\n');
+
+          for (let line of lines) {
+            const lowerLine = line.toLowerCase();
+            // 尋找包含 lv 或類似標籤的行
+            if (lowerLine.includes('lv') || lowerLine.includes('l.') || lowerLine.includes('l/')) {
+              const nums = line.match(/\d+/g);
+              if (nums && nums.length > 0) {
+                const valid = nums.map(Number).find(n => n >= 10 && n <= 200);
+                if (valid) detectedLv = String(valid);
+              }
+            }
+            // 尋找包含 exp 的行
+            if (lowerLine.includes('exp')) {
+              const expMatch = line.match(/\d{6,12}/);
+              if (expMatch) {
+                detectedExp = expMatch[0];
               }
             }
           }
-          if (detectedLv) setLevel(detectedLv);
 
-          // --- 3. 🎯 經驗值 (EXP) 抓取 ---
-          let detectedExp = '';
-          const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || flattenedText.match(/exp\[?(\d{5,12})/i);
-          if (expMatch && expMatch[1]) {
-            detectedExp = expMatch[1].replace(/[,.]/g, '');
-          } else {
-            const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
-            if (allLongNums && allLongNums.length > 0) {
-              allLongNums.sort((a, b) => b.length - a.length);
-              detectedExp = allLongNums[0];
+          // 備用防護：若行解析未命中，透過全域尋找
+          if (!detectedLv) {
+            const allNums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+            if (allNums && allNums.length > 0) {
+              const highLvs = allNums.map(Number).filter(n => n >= 100 && n <= 200);
+              detectedLv = highLvs.length > 0 ? String(highLvs[0]) : allNums[0];
             }
           }
+
+          if (!detectedExp) {
+            const longNums = rawText.replace(/[,.]/g, '').match(/\d{7,10}/g);
+            if (longNums && longNums.length > 0) {
+              detectedExp = longNums[0];
+            }
+          }
+
+          if (detectedLv) setLevel(detectedLv);
           if (detectedExp) setExpVal(detectedExp);
 
-          setMsg('🎉 掃描完成！若系統自動代入的數字有誤差，請直接手動修改後即可提交！');
+          setMsg('🎉 掃描完成！請確認自動代入的數字，若有誤差可直接修改。');
         } else {
           setMsg('請手動填寫等級與經驗值。');
         }
@@ -322,7 +327,7 @@ export default function Home() {
 
       reader.readAsDataURL(selectedFile);
     } catch (err) {
-      setMsg('💡 照片已選擇，請手動確認數字。');
+      setMsg('💡 照片已選擇，請手動填寫數字。');
       setScanning(false);
     }
   }
@@ -419,7 +424,7 @@ export default function Home() {
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全速讀取截圖中的數據...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在讀取截圖中的數據...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
