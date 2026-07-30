@@ -277,7 +277,14 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在解析 Artale 遊戲介面...');
+    setMsg('⚡ 正在進行高畫質像素放大與介面解析...');
+
+    const now = new Date();
+    const YYYY = now.getFullYear();
+    const M = now.getMonth() + 1;
+    const D = now.getDate();
+    const MM = String(M).padStart(2, '0');
+    const DD = String(D).padStart(2, '0');
 
     try {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
@@ -297,9 +304,8 @@ export default function Home() {
           }
         }
 
-        // --- 2. 🎯 專屬對應截圖左下角的 LV. 173 格式抓取 ---
+        // --- 2. 🎯 左下角 LV. 等級精準抓取 ---
         let detectedLv = '';
-        // 嚴格對應 "LV." 後方或附近的 1~3 位數等級
         const lvMatch = rawText.match(/lv[\s\.:]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
 
         if (lvMatch && lvMatch[1]) {
@@ -309,7 +315,6 @@ export default function Home() {
           }
         }
 
-        // 備用防護：直接抓取左下角區塊最顯眼的 50~200 數字
         if (!detectedLv) {
           const allNums = rawText.match(/\b(5[0-9]|[1-9][0-9]|1[0-9]{2}|200)\b/g);
           if (allNums && allNums.length > 0) {
@@ -332,7 +337,28 @@ export default function Home() {
         }
         if (detectedExp) setExpVal(detectedExp);
 
-        setMsg('🎉 掃描完成！已完美對應左下角等級與經驗值，請確認無誤後即可提交！');
+        // --- 4. 🎯 日期核對 ---
+        const dateTargets = [
+          `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
+          `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
+          `${MM}${DD}`, `${YYYY}${MM}${DD}`
+        ];
+
+        let hasDate = false;
+        for (let str of dateTargets) {
+          if (rawText.includes(str) || cleanRaw.includes(str.replace(/\s+/g, '').toLowerCase())) {
+            hasDate = true;
+            break;
+          }
+        }
+
+        if (hasDate) {
+          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
+        } else {
+          setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
+        }
+
+        setMsg('🎉 掃描完成！已完美對應左下角等級、經驗值與日期，請確認無誤後即可提交！');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
@@ -429,13 +455,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取左下角 LV. 數字與 EXP，若有誤差可直接手動修正！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取左下角 LV. 數字、經驗值與右下角日期，若有誤差可直接手動修正！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在解析左下角等級與經驗值...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在解析左下角等級與右下角日期...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
