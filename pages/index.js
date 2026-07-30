@@ -7,7 +7,10 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 1~200 級每級所需經驗值對照表
+// 🔒 預設幹部管理員密碼
+const ADMIN_PASSWORD = '8888';
+
+// 🍁 1~200 級經驗值對照表
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -26,531 +29,300 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 正式獎勵標籤
-function getPrizeBadge(rank) {
-  if (rank === 0) return '🥇 闇黑龍王披風';
-  if (rank === 1) return '🥈 楓葉祝福 20';
-  if (rank === 2) return '🥉 闇黑龍王項鍊';
-  if (rank === 3) return '🏅 雪花 300';
-  if (rank === 4) return '🏅 突襲劵 14 張';
-  if (rank >= 5 && rank <= 13) return '🏅 突襲劵 7 張';
-  if (rank === 14) return '🏅 商城寵物一隻';
-  if (rank >= 15 && rank <= 19) return '🏅 雪花 50';
-  return '🎗️ 努力參賽獎';
-}
-
-export default function Home() {
-  const [charId, setCharId] = useState('');
-  const [pin, setPin] = useState('');
-  const [loggedInUser, setLoggedInUser] = useState('');
-  const [newCharIdInput, setNewCharIdInput] = useState(''); // 新增：改名輸入框
-  const [newPin, setNewPin] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false);
-  
-  const [level, setLevel] = useState('');
-  const [expVal, setExpVal] = useState('');
-  const [file, setFile] = useState(null);
-  
-  const [players, setPlayers] = useState([]);
-  const [history, setHistory] = useState([]);
+export default function Admin() {
+  const [adminPass, setAdminPass] = useState('');
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [submissions, setSubmissions] = useState([]);
+  const [participants, setParticipants] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [msg, setMsg] = useState('');
-  const [dateNotice, setDateNotice] = useState('');
-  const [charNotice, setCharNotice] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  
+  // 編輯模式狀態
+  const [editingSub, setEditingSub] = useState(null);
+  const [editLevel, setEditLevel] = useState('');
+  const [editExp, setEditExp] = useState('');
+
+  // 重設密碼狀態
+  const [resetName, setResetName] = useState('');
+  const [resetPin, setResetPin] = useState('0000');
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('artale_user');
-    if (savedUser) {
-      setLoggedInUser(savedUser);
-      setIsLoggedIn(true);
-      fetchUserHistory(savedUser);
+    if (isAdminLoggedIn) {
+      fetchAllData();
     }
-  }, []);
+  }, [isAdminLoggedIn]);
 
-  async function fetchLeaderboard() {
+  async function fetchAllData() {
     if (!supabase) return;
-    const { data } = await supabase
-      .from('submissions')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (data && data.length > 0) {
-      const userGroup = {};
-      data.forEach(sub => {
-        const cleanName = (sub.char_id || '').trim();
-        if (!cleanName) return;
-        if (!userGroup[cleanName]) {
-          userGroup[cleanName] = [];
-        }
-        userGroup[cleanName].push(sub);
-      });
-
-      const list = Object.keys(userGroup).map(id => {
-        const subs = userGroup[id];
-        const baseline = subs[0];
-        const latest = subs[subs.length - 1];
-
-        const baselineTotal = Number(baseline.total_exp) || 0;
-        const latestTotal = Number(latest.total_exp) || 0;
-        const expGrowth = latestTotal - baselineTotal;
-
-        return {
-          char_id: id,
-          level: latest.level,
-          exp_val: latest.exp_val,
-          growth_exp: expGrowth >= 0 ? expGrowth : 0,
-          created_at: latest.created_at,
-          submission_count: subs.length
-        };
-      });
-
-      list.sort((a, b) => b.growth_exp - a.growth_exp);
-      setPlayers(list);
-    }
-  }
-
-  async function fetchUserHistory(id) {
-    if (!supabase) return;
-    const cleanId = id.trim();
-    const { data } = await supabase
-      .from('submissions')
-      .select('*')
-      .eq('char_id', cleanId)
-      .order('id', { ascending: true });
-
-    if (data) {
-      setHistory(data);
-    }
-  }
-
-  async function handleAuth(e) {
-    e.preventDefault();
-    const cleanId = charId.trim();
-    if (!supabase) return setMsg('Supabase 設定未完全');
-    if (!cleanId || !pin) return setMsg('請輸入角色名稱與 4 位數 PIN 碼');
-
-    const { data: user } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('char_id', cleanId)
-      .single();
-
-    if (!user) {
-      const { error } = await supabase.from('participants').insert([{ char_id: cleanId, pin }]);
-      if (error) return setMsg('註冊失敗：' + error.message);
-      setMsg('註冊成功並登入！');
-      setLoggedInUser(cleanId);
-      localStorage.setItem('artale_user', cleanId);
-      setIsLoggedIn(true);
-      setHasSubmitted(false);
-    } else {
-      if (user.pin !== pin) {
-        return setMsg('PIN 碼不正確！');
-      }
-      setMsg('登入成功！');
-      setLoggedInUser(cleanId);
-      localStorage.setItem('artale_user', cleanId);
-      setIsLoggedIn(true);
-      setHasSubmitted(false);
-    }
-  }
-
-  function handleLogout() {
-    localStorage.removeItem('artale_user');
-    setIsLoggedIn(false);
-    setLoggedInUser('');
-    setCharId('');
-    setPin('');
-    setHasSubmitted(false);
-    setHistory([]);
-    setMsg('已成功登出！');
-  }
-
-  // 🔄 玩家改名邏輯
-  async function handleRename(e) {
-    e.preventDefault();
-    const targetName = newCharIdInput.trim();
-    if (!targetName) return setMsg('請輸入新的角色名稱！');
-    if (targetName === loggedInUser) return setMsg('新名稱不能與舊名稱相同！');
-
-    // 檢查新名字是否已被註冊
-    const { data: existingUser } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('char_id', targetName)
-      .single();
-
-    if (existingUser) {
-      return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
-    }
-
-    // 1. 更新 participants 表
-    const { error: partErr } = await supabase
-      .from('participants')
-      .update({ char_id: targetName })
-      .eq('char_id', loggedInUser);
-
-    if (partErr) return setMsg('修改角色名稱失敗：' + partErr.message);
-
-    // 2. 批量轉移 submissions 表中的歷史成績
-    await supabase
-      .from('submissions')
-      .update({ char_id: targetName })
-      .eq('char_id', loggedInUser);
-
-    // 3. 更新本地狀態
-    const oldName = loggedInUser;
-    setLoggedInUser(targetName);
-    localStorage.setItem('artale_user', targetName);
-    setNewCharIdInput('');
-    setMsg(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
     
-    fetchUserHistory(targetName);
-    fetchLeaderboard();
+    const { data: subs } = await supabase
+      .from('submissions')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (subs) setSubmissions(subs);
+
+    const { data: parts } = await supabase
+      .from('participants')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (parts) setParticipants(parts);
   }
 
-  async function handleUpdatePin(e) {
+  function handleAdminLogin(e) {
     e.preventDefault();
-    if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
+    if (adminPass === ADMIN_PASSWORD) {
+      setIsAdminLoggedIn(true);
+      setMsg('登入成功！歡迎幹部小幫手使用管理後台');
+    } else {
+      setMsg('❌ 管理員密碼錯誤！');
+    }
+  }
+
+  // 🗑️ 刪除單筆成績紀錄 (不影響該玩家其他紀錄)
+  async function handleDeleteSubmission(subId) {
+    if (!confirm(`確定要刪除紀錄 #${subId} 嗎？（刪除後系統會自動補上上一筆合規紀錄）`)) return;
+    const { error } = await supabase.from('submissions').delete().eq('id', subId);
+    if (error) {
+      setMsg('刪除失敗：' + error.message);
+    } else {
+      setMsg(`已成功刪除紀錄 #${subId}！排行榜已自動重新計算。`);
+      fetchAllData();
+    }
+  }
+
+  // ✏️ 開啟微調修改視窗
+  function handleStartEdit(sub) {
+    setEditingSub(sub);
+    setEditLevel(sub.level);
+    setEditExp(sub.exp_val);
+  }
+
+  // 💾 儲存微調後的數字
+  async function handleSaveEdit(e) {
+    e.preventDefault();
+    if (!editingSub) return;
+
+    const newLv = Number(editLevel);
+    const newExp = Number(editExp);
+    const calculatedTotalExp = getCumulativeExp(newLv) + newExp;
+
+    const { error } = await supabase
+      .from('submissions')
+      .update({
+        level: newLv,
+        exp_val: newExp,
+        total_exp: calculatedTotalExp
+      })
+      .eq('id', editingSub.id);
+
+    if (error) {
+      setMsg('修改失敗：' + error.message);
+    } else {
+      setMsg(`🎉 成功修改紀錄 #${editingSub.id} 的成績！`);
+      setEditingSub(null);
+      fetchAllData();
+    }
+  }
+
+  // 🧹 徹底刪除整個玩家帳號及其所有數據
+  async function handleDeletePlayer(charId) {
+    if (!confirm(`⚠️ 警告：確定要徹底清除【${charId}】玩家帳號及其「所有歷史成績紀錄」嗎？此操作無法復原！`)) return;
+    
+    await supabase.from('submissions').delete().eq('char_id', charId);
+    const { error } = await supabase.from('participants').delete().eq('char_id', charId);
+
+    if (error) {
+      setMsg('刪除玩家失敗：' + error.message);
+    } else {
+      setMsg(`已徹底刪除玩家【${charId}】及其所有歷史成績！`);
+      fetchAllData();
+    }
+  }
+
+  // 🔑 幫忘記 PIN 碼的玩家重設密碼
+  async function handleResetUserPin(e) {
+    e.preventDefault();
+    if (!resetName || !resetPin) return setMsg('請填寫完整資訊');
 
     const { error } = await supabase
       .from('participants')
-      .update({ pin: newPin })
-      .eq('char_id', loggedInUser);
+      .update({ pin: resetPin })
+      .eq('char_id', resetName.trim());
 
     if (error) {
-      setMsg('修改密碼失敗：' + error.message);
+      setMsg('重設失敗：' + error.message);
     } else {
-      setPin(newPin);
-      setNewPin('');
-      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
+      setMsg(`🎉 成功幫【${resetName}】的 PIN 碼重設為【${resetPin}】！`);
+      setResetName('');
+      fetchAllData();
     }
   }
 
-  function prepareImageForOCR(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const maxDim = 1800;
-          let width = img.width;
-          let height = img.height;
-          if (width > height && width > maxDim) {
-            height *= maxDim / width;
-            width = maxDim;
-          } else if (height > maxDim) {
-            width *= maxDim / height;
-            height = maxDim;
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.92));
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
+  // 📊 匯出排行榜 CSV 檔 (結算發獎用)
+  function handleExportCSV() {
+    if (submissions.length === 0) return alert('目前尚無成績可匯出');
+
+    const userGroup = {};
+    submissions.slice().reverse().forEach(sub => {
+      const cleanName = (sub.char_id || '').trim();
+      if (!cleanName) return;
+      if (!userGroup[cleanName]) userGroup[cleanName] = [];
+      userGroup[cleanName].push(sub);
     });
+
+    const list = Object.keys(userGroup).map(id => {
+      const subs = userGroup[id];
+      const baseline = subs[0];
+      const latest = subs[subs.length - 1];
+
+      const baselineTotal = Number(baseline.total_exp) || 0;
+      const latestTotal = Number(latest.total_exp) || 0;
+      const expGrowth = latestTotal - baselineTotal;
+
+      return {
+        char_id: id,
+        level: latest.level,
+        growth_exp: expGrowth >= 0 ? expGrowth : 0,
+        submission_count: subs.length,
+        last_update: latest.created_at
+      };
+    });
+
+    list.sort((a, b) => b.growth_exp - a.growth_exp);
+
+    let csvContent = '\uFEFF名次,角色名稱,當前等級,累積成長經驗值,回報次數,最後更新時間\n';
+    list.forEach((p, idx) => {
+      csvContent += `${idx + 1},"${p.char_id}",Lv.${p.level},${p.growth_exp},${p.submission_count},"${new Date(p.last_update).toLocaleString('zh-TW')}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Artale練等大賽結算表_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
-  async function handleFileChange(e) {
-    const selectedFile = e.target.files[0];
-    if (!selectedFile) return;
-    setFile(selectedFile);
-    setScanning(true);
-    setDateNotice('');
-    setCharNotice('');
-    setMsg('🔍 正在辨識截圖內容...');
-
-    const now = new Date();
-    const YYYY = now.getFullYear();
-    const M = now.getMonth() + 1;
-    const D = now.getDate();
-    const MM = String(M).padStart(2, '0');
-    const DD = String(D).padStart(2, '0');
-
-    const mmddStr = `${MM}${DD}`;
-    const mddStr = `${M}${DD}`;
-
-    try {
-      const ocrImage = await prepareImageForOCR(selectedFile);
-
-      if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(ocrImage, 'eng');
-        const text = result.data.text;
-
-        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
-        if (lvMatch && lvMatch[1]) {
-          setLevel(lvMatch[1]);
-        }
-
-        const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
-        if (expMatch && expMatch[1]) {
-          setExpVal(expMatch[1]);
-        }
-
-        const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
-        const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
-        const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
-        const pattern4 = new RegExp(`(${mmddStr}|${mddStr})`, 'i');
-
-        const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text) || pattern4.test(text);
-
-        if (hasDateMatch) {
-          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
-        } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工核對。`);
-        }
-
-        if (loggedInUser) {
-          setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
-        }
-
-        setMsg('✨ 分析完成！請檢查帶入的數字，若有誤差可直接手動修改。');
-      }
-    } catch (err) {
-      setMsg('圖片已選擇，請手動確認等級與經驗值。');
-    } finally {
-      setScanning(false);
-    }
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!file) return setMsg('請選擇截圖照片');
-    if (!level || !expVal) return setMsg('請填寫或確認等級與經驗值');
-    if (!loggedInUser) return setMsg('登入狀態異常，請重新登入');
-
-    setLoading(true);
-    setMsg('照片與成績上傳中...');
-
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('screenshots')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from('screenshots')
-        .getPublicUrl(fileName);
-
-      const photoUrl = publicUrlData.publicUrl;
-      const targetLevel = Number(level);
-      const inputExpNum = Number(expVal);
-
-      const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
-
-      const { error: subError } = await supabase.from('submissions').insert([{
-        char_id: loggedInUser.trim(),
-        level: targetLevel,
-        exp_val: inputExpNum,
-        total_exp: calculatedTotalExp,
-        photo_url: photoUrl,
-        status: 'approved'
-      }]);
-
-      if (subError) throw subError;
-
-      setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true);
-      fetchLeaderboard();
-      fetchUserHistory(loggedInUser);
-    } catch (err) {
-      setMsg('上傳失敗：' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // 篩選列表
+  const filteredSubmissions = submissions.filter(s => 
+    s.char_id.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '1050px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <Head>
-        <title>Artale 夏日練等大賽</title>
-        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+        <title>iDotCat 幹部管理後台</title>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b' }}>🍁 Artale 夏日練等大賽</h1>
+      <h1 style={{ textAlign: 'center', color: '#991b1b' }}>👑 iDotCat 夏日練等大賽 - 幹部管理後台</h1>
 
       {msg && <div style={{ background: '#3b82f6', color: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '15px', fontWeight: 'bold' }}>{msg}</div>}
 
-      {!isLoggedIn ? (
-        <form onSubmit={handleAuth} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
-          <h3>🔑 玩家登入 / 報名</h3>
-          <input type="text" placeholder="遊戲角色 ID" value={charId} onChange={e => setCharId(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-          <input type="password" placeholder="自訂 4 位數預設 PIN 碼" value={pin} onChange={e => setPin(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-          <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>登入 / 註冊</button>
+      {!isAdminLoggedIn ? (
+        <form onSubmit={handleAdminLogin} style={{ maxWidth: '400px', margin: '50px auto', background: '#f8fafc', padding: '30px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+          <h3>🔑 幹部管理員登入</h3>
+          <input 
+            type="password" 
+            placeholder="請輸入管理員密碼 (預設: 8888)" 
+            value={adminPass} 
+            onChange={e => setAdminPass(e.target.value)} 
+            style={{ display: 'block', margin: '15px 0', padding: '12px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+          />
+          <button type="submit" style={{ padding: '12px 24px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}>登入管理後台</button>
         </form>
       ) : (
         <div>
-          {/* 回報成績表單 */}
-          <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
-              <button type="button" onClick={handleLogout} style={{ padding: '6px 12px', background: '#64748b', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>切換帳號 / 登出</button>
-            </div>
-
-            <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
-            
-            <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並計算活動經驗值成長量！
-            </div>
-
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
-            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
-            
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在分析圖片中...</p>}
-            
-            {dateNotice && (
-              <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
-                {dateNotice}
-              </div>
-            )}
-
-            {charNotice && (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
-                {charNotice}
-              </div>
-            )}
-
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
-            <input type="number" placeholder="例如：173" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
+          {/* 工具按鈕與搜尋欄 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <input 
-              type="number" 
-              placeholder="例如：246011374" 
-              value={expVal} 
-              onChange={e => setExpVal(e.target.value)} 
-              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+              type="text" 
+              placeholder="🔍 搜尋特定角色 ID..." 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+              style={{ padding: '10px', width: '250px', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
             />
 
-            <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
-              {loading ? '提交中...' : '確認並提交成績'}
+            <button onClick={handleExportCSV} style={{ padding: '10px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+              📊 匯出排行榜 Excel/CSV 報表
             </button>
-          </form>
+          </div>
 
-          {/* 📈 角色經驗值走勢圖 */}
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢</h3>
-            {history.length < 2 ? (
-              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
-            ) : (
-              <div style={{ width: '100%', overflowX: 'auto' }}>
-                <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
-                  {(() => {
-                    const maxExp = Math.max(...history.map(h => h.total_exp || 0));
-                    const minExp = Math.min(...history.map(h => h.total_exp || 0));
-                    const expRange = (maxExp - minExp) || 1;
-                    
-                    const points = history.map((h, index) => {
-                      const x = 40 + (index / (history.length - 1)) * 420;
-                      const y = 140 - (((h.total_exp || 0) - minExp) / expRange) * 100;
-                      return `${x},${y}`;
-                    }).join(' ');
+          {/* 編輯跳窗 */}
+          {editingSub && (
+            <form onSubmit={handleSaveEdit} style={{ background: '#f0f9ff', border: '2px solid #0284c7', padding: '20px', borderRadius: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 10px 0', color: '#0369a1' }}>✏️ 微調修改成績紀錄 #{editingSub.id} (角色：{editingSub.char_id})</h3>
+              <div style={{ display: 'flex', gap: '15px', marginBottom: '10px' }}>
+                <div>
+                  <label style={{ fontWeight: 'bold' }}>等級 (LV)：</label>
+                  <input type="number" value={editLevel} onChange={e => setEditLevel(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', display: 'block', marginTop: '5px' }} />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 'bold' }}>經驗值 (EXP)：</label>
+                  <input type="number" value={editExp} onChange={e => setEditExp(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', display: 'block', marginTop: '5px', width: '220px' }} />
+                </div>
+              </div>
+              <button type="submit" style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginRight: '10px' }}>儲存修改</button>
+              <button type="button" onClick={() => setEditingSub(null)} style={{ padding: '8px 16px', background: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>取消</button>
+            </form>
+          )}
 
+          {/* 重設玩家 PIN 碼功能 */}
+          <div style={{ background: '#fffbe0', padding: '15px 20px', borderRadius: '12px', border: '1px solid #fef08a', marginBottom: '25px' }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#854d0e' }}>🔑 協助公會成員重設 PIN 碼</h4>
+            <form onSubmit={handleResetUserPin} style={{ display: 'flex', gap: '10px' }}>
+              <input type="text" placeholder="玩家角色 ID" value={resetName} onChange={e => setResetName(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+              <input type="text" placeholder="新 4 位數 PIN" value={resetPin} onChange={e => setResetPin(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+              <button type="submit" style={{ padding: '8px 16px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>重設 PIN 碼</button>
+            </form>
+          </div>
+
+          {/* 所有玩家提交紀錄與原始照片 */}
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <h3>📸 玩家上傳截圖與成績列表 (共 {filteredSubmissions.length} 筆)</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
+                    <th style={{ padding: '10px' }}>ID</th>
+                    <th style={{ padding: '10px' }}>角色名稱</th>
+                    <th style={{ padding: '10px' }}>等級</th>
+                    <th style={{ padding: '10px' }}>經驗值</th>
+                    <th style={{ padding: '10px' }}>對應原始截圖</th>
+                    <th style={{ padding: '10px' }}>提交時間</th>
+                    <th style={{ padding: '10px' }}>管理操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSubmissions.map((sub) => {
+                    const timeStr = sub.created_at ? new Date(sub.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '';
                     return (
-                      <>
-                        <polyline fill="none" stroke="#2563eb" strokeWidth="3" points={points} />
-                        {history.map((h, index) => {
-                          const x = 40 + (index / (history.length - 1)) * 420;
-                          const y = 140 - (((h.total_exp || 0) - minExp) / expRange) * 100;
-                          const dateStr = h.created_at ? new Date(h.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) : `第${index+1}次`;
-                          return (
-                            <g key={index}>
-                              <circle cx={x} cy={y} r="5" fill="#1d4ed8" />
-                              <text x={x} y={y - 10} fontSize="11" textAnchor="middle" fill="#1e293b" fontWeight="bold">Lv.{h.level}</text>
-                              <text x={x} y="165" fontSize="10" textAnchor="middle" fill="#64748b">{dateStr}</text>
-                            </g>
-                          );
-                        })}
-                      </>
+                      <tr key={sub.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px', color: '#64748b' }}>#{sub.id}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{sub.char_id}</td>
+                        <td style={{ padding: '10px' }}>Lv.{sub.level}</td>
+                        <td style={{ padding: '10px' }}>{Number(sub.exp_val).toLocaleString()}</td>
+                        <td style={{ padding: '10px' }}>
+                          {sub.photo_url ? (
+                            <a href={sub.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 'bold' }}>📸 看照片</a>
+                          ) : '無'}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#64748b' }}>{timeStr}</td>
+                        <td style={{ padding: '10px' }}>
+                          <button onClick={() => handleStartEdit(sub)} style={{ padding: '4px 8px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', marginRight: '6px' }}>微調修改</button>
+                          <button onClick={() => handleDeleteSubmission(sub.id)} style={{ padding: '4px 8px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', marginRight: '6px' }}>單筆刪除</button>
+                          <button onClick={() => handleDeletePlayer(sub.char_id)} style={{ padding: '4px 8px', background: '#475569', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>清空該帳號</button>
+                        </td>
+                      </tr>
                     );
-                  })()}
-                </svg>
-              </div>
-            )}
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-
-          {/* ⚙️ 個人設定區（改名與修改密碼） */}
-          <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
-            <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
-            
-            {/* 1. 角色改名功能 */}
-            <form onSubmit={handleRename} style={{ marginBottom: '15px' }}>
-              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔄 角色遊戲內改名 / 轉移數據：</label>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <input type="text" placeholder="輸入遊戲內的新角色 ID" value={newCharIdInput} onChange={e => setNewCharIdInput(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                <button type="submit" style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>確認改名</button>
-              </div>
-            </form>
-
-            {/* 2. 修改 PIN 碼 */}
-            <form onSubmit={handleUpdatePin}>
-              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔑 修改個人 4 位數 PIN 碼：</label>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 🏆 排行榜區塊 */}
-      {!hasSubmitted ? (
-        <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
-          <p style={{ margin: 0, fontSize: '15px' }}>請登入並<strong>完成一次截圖與成績提交</strong>，系統將為您即時解鎖練等大賽排行榜！</p>
-        </div>
-      ) : (
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <h2 style={{ color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginTop: 0 }}>🏆 練等大賽即時排行榜 (活動成長量排名)</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ padding: '12px 8px' }}>名次</th>
-                <th style={{ padding: '12px 8px' }}>角色名稱</th>
-                <th style={{ padding: '12px 8px' }}>當前等級</th>
-                <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
-                <th style={{ padding: '12px 8px' }}>當前對應獎品</th>
-                <th style={{ padding: '12px 8px' }}>最後更新時間</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.length === 0 ? (
-                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
-              ) : (
-                players.map((p, idx) => {
-                  const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
-                        {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
-                      </td>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
-                      <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
-                      <td style={{ padding: '12px 8px', color: '#16a34a', fontWeight: 'bold' }}>
-                        +{Number(p.growth_exp).toLocaleString()}
-                      </td>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', fontSize: '13px', color: '#0284c7' }}>
-                        {getPrizeBadge(idx)}
-                      </td>
-                      <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
         </div>
       )}
     </div>
