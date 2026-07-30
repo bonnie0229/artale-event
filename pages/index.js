@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import Script from 'next/script';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -8,10 +7,10 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🎯 活動截止時間設定：9月8日 早上 07:59 (台灣時間)
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 Artale 1~200 級每級所需經驗值對照表
+// 🍁 Artale 1~200 級經驗值對照表
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -30,7 +29,6 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -50,7 +48,7 @@ export default function Home() {
   const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false); // 🔒 每次開啟須上傳才解鎖
   
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
@@ -64,7 +62,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
-  // ⏱️ 倒數計時器狀態
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEnded, setIsEnded] = useState(false);
 
@@ -76,7 +73,6 @@ export default function Home() {
       fetchUserHistory(savedUser);
     }
 
-    // 啟動倒數計時
     const timer = setInterval(() => {
       const now = new Date().getTime();
       const difference = DEADLINE - now;
@@ -257,6 +253,18 @@ export default function Home() {
     }
   }
 
+  // ⚡ 動態確保 Tesseract 套件加載完成 (不卡住、不失效)
+  function ensureTesseractLoaded() {
+    return new Promise((resolve, reject) => {
+      if (window.Tesseract) return resolve(window.Tesseract);
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      script.onload = () => resolve(window.Tesseract);
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
   function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -286,6 +294,7 @@ export default function Home() {
     });
   }
 
+  // 📸 精準圖像自動帶入 LV / EXP / 日期
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -307,22 +316,26 @@ export default function Home() {
     const mddStr = `${M}${DD}`;
 
     try {
+      const TesseractObj = await ensureTesseractLoaded();
       const ocrImage = await prepareImageForOCR(selectedFile);
 
-      if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(ocrImage, 'eng');
+      if (TesseractObj) {
+        const result = await TesseractObj.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
+        // 1. 🎯 抓取 LV (等級)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
         }
 
+        // 2. 🎯 抓取 EXP (經驗值)
         const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
         if (expMatch && expMatch[1]) {
           setExpVal(expMatch[1]);
         }
 
+        // 3. 🎯 驗證今日日期 (工作列/聊天室/頻道)
         const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
         const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
         const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
@@ -340,7 +353,7 @@ export default function Home() {
           setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
 
-        setMsg('✨ 分析完成！請檢查帶入的數字，若有偏差可直接手動修改。');
+        setMsg('✨ 分析完成！請檢查自動帶入的 LV 與 EXP 數字，若有偏差可直接手動修改。');
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -392,7 +405,7 @@ export default function Home() {
       if (subError) throw subError;
 
       setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true);
+      setHasSubmitted(true); // 🔓 當次提交成功，正式解鎖排行榜！
       fetchLeaderboard();
       fetchUserHistory(loggedInUser);
     } catch (err) {
@@ -406,12 +419,11 @@ export default function Home() {
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <Head>
         <title>Artale 夏日練等大賽</title>
+        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
-      <Script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" strategy="lazyOnload" />
 
       <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale 夏日練等大賽</h1>
 
-      {/* ⏱️ 醒目的活動倒數計時橫幅 */}
       <div style={{ background: isEnded ? '#fef2f2' : '#f0fdf4', border: '2px solid ' + (isEnded ? '#fecdd3' : '#bbf7d0'), padding: '12px 20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h3 style={{ margin: 0, color: isEnded ? '#dc2626' : '#15803d' }}>
           {isEnded ? '⏰ 活動已於 9月8日 07:59 正式截止結算！' : '⏱️ 活動剩餘倒數時間（結算截止：9/8 07:59）'}
@@ -434,7 +446,6 @@ export default function Home() {
         </form>
       ) : (
         <div>
-          {/* 回報成績表單 */}
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
@@ -524,7 +535,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* ⚙️ 個人設定區（改名與修改密碼） */}
           <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
             <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
             
