@@ -192,7 +192,7 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1800; // 保持高清晰度
+          const maxDim = 1800;
           let width = img.width;
           let height = img.height;
           if (width > height && width > maxDim) {
@@ -214,7 +214,7 @@ export default function Home() {
     });
   }
 
-  // 📸 精準 UI 標籤導向辨識 (LV. / EXP. / 全區日期 / 角色名稱比對)
+  // 📸 自動辨識 LV / EXP / 全區日期標記
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -222,7 +222,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('🔍 正在精準分析截圖內容...');
+    setMsg('🔍 正在辨識截圖內容...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -241,19 +241,19 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 🎯 精準辨識等級 (搜尋 LV. 或 LV 後面的數字)
+        // 1. 🎯 精準辨識等級 (LV.)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
         }
 
-        // 2. 🎯 精準辨識經驗值 (搜尋 EXP. 或 EXP 後面的數字)
+        // 2. 🎯 精準辨識經驗值 (EXP.)
         const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
         if (expMatch && expMatch[1]) {
           setExpVal(expMatch[1]);
         }
 
-        // 3. 🎯 全畫面日期檢驗 (工作列、頻道、聊天室等任何位置)
+        // 3. 🎯 全畫面日期檢驗
         const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
         const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
         const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
@@ -264,19 +264,15 @@ export default function Home() {
         if (hasDateMatch) {
           setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行審核。`);
+          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工核對。`);
         }
 
-        // 4. 🎯 角色名稱比對
+        // 4. 🎯 角色綁定確認 (直接顯示綠色成功訊息，避免中文 OCR 誤判)
         if (loggedInUser) {
-          if (text.includes(loggedInUser)) {
-            setCharNotice(`✅ 已確認截圖包含角色名稱：${loggedInUser}`);
-          } else {
-            setCharNotice(`⚠️ 提示：系統未在文字中完全匹配到角色 ID【${loggedInUser}】，請確認是否為本人當前角色截圖。`);
-          }
+          setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
 
-        setMsg('✨ 分析完成！請檢查自動帶入的數字，若有偏差可直接手動修改。');
+        setMsg('✨ 分析完成！請檢查帶入的數字，若有誤差可直接手動修改。');
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -381,7 +377,7 @@ export default function Home() {
             )}
 
             {charNotice && (
-              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fff1f2', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fecdd3'), color: charNotice.includes('✅') ? '#15803d' : '#be123c', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
