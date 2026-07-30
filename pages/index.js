@@ -156,8 +156,8 @@ export default function Home() {
   async function handleAuth(e) {
     e.preventDefault();
     const cleanId = charId.trim();
-    if (!supabase) return alert('Supabase 設定未完全');
-    if (!cleanId || !pin) return alert('請輸入角色名稱與 4 位數 PIN 碼');
+    if (!supabase) return setMsg('⚠️ Supabase 設定未完全');
+    if (!cleanId || !pin) return setMsg('⚠️ 請輸入角色名稱與 4 位數 PIN 碼');
 
     const { data: user } = await supabase
       .from('participants')
@@ -167,8 +167,8 @@ export default function Home() {
 
     if (!user) {
       const { error } = await supabase.from('participants').insert([{ char_id: cleanId, pin }]);
-      if (error) return alert('註冊失敗：' + error.message);
-      alert('註冊成功並登入！');
+      if (error) return setMsg('❌ 註冊失敗：' + error.message);
+      setMsg('🎉 註冊成功並登入！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
@@ -176,9 +176,9 @@ export default function Home() {
       fetchUserHistory(cleanId);
     } else {
       if (user.pin !== pin) {
-        return alert('PIN 碼不正確！');
+        return setMsg('❌ PIN 碼不正確！');
       }
-      alert('登入成功！');
+      setMsg('✅ 登入成功！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
@@ -200,13 +200,13 @@ export default function Home() {
 
   async function handleRename(e) {
     e.preventDefault();
-    if (!supabase) return alert('Supabase 設定未完全');
+    if (!supabase) return setMsg('⚠️ Supabase 設定未完全');
     const targetName = newCharIdInput.trim();
-    if (!targetName) return alert('請輸入新的角色名稱！');
-    if (targetName === loggedInUser) return alert('新名稱不能與舊名稱相同！');
+    if (!targetName) return setMsg('⚠️ 請輸入新的角色名稱！');
+    if (targetName === loggedInUser) return setMsg('⚠️ 新名稱不能與舊名稱相同！');
 
     const { data: existingUser } = await supabase.from('participants').select('*').eq('char_id', targetName).single();
-    if (existingUser) return alert(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
+    if (existingUser) return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
 
     await supabase.from('participants').update({ char_id: targetName }).eq('char_id', loggedInUser);
     await supabase.from('submissions').update({ char_id: targetName }).eq('char_id', loggedInUser);
@@ -215,7 +215,7 @@ export default function Home() {
     setLoggedInUser(targetName);
     localStorage.setItem('artale_user', targetName);
     setNewCharIdInput('');
-    alert(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
+    setMsg(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
     
     fetchUserHistory(targetName);
     fetchLeaderboard();
@@ -223,8 +223,8 @@ export default function Home() {
 
   async function handleUpdatePin(e) {
     e.preventDefault();
-    if (!supabase) return alert('Supabase 設定未完全');
-    if (!newPin || newPin.length !== 4) return alert('新密碼必須是 4 位數字！');
+    if (!supabase) return setMsg('⚠️ Supabase 設定未完全');
+    if (!newPin || newPin.length !== 4) return setMsg('⚠️ 新密碼必須是 4 位數字！');
 
     const { error } = await supabase
       .from('participants')
@@ -232,11 +232,11 @@ export default function Home() {
       .eq('char_id', loggedInUser);
 
     if (error) {
-      alert('修改密碼失敗：' + error.message);
+      setMsg('❌ 修改密碼失敗：' + error.message);
     } else {
       setPin(newPin);
       setNewPin('');
-      alert('密碼已成功修改為新密碼！');
+      setMsg('✅ 密碼已成功修改為新密碼！');
     }
   }
 
@@ -269,7 +269,7 @@ export default function Home() {
     });
   }
 
-  // 📸 強力精準解析等級、經驗值與日期
+  // 📸 精準過濾等級 (1~200) 與經驗值 (防誤判 173 看成 74)
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -278,11 +278,7 @@ export default function Home() {
     setDateNotice('');
     setCharNotice('');
     setIsManuallyEdited(false);
-    setMsg('🔍 正在強力解析截圖中的資料...');
-
-    const now = new Date();
-    const M = now.getMonth() + 1; // 7
-    const D = now.getDate();     // 31
+    setMsg('🔍 正在強力解析 7/30 以後的截圖資料...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -291,29 +287,38 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 1. 🎯 等級抓取
+        // 1. 🎯 高精度等級抓取 (尋找 Lv 或 Level，並嚴格限制 1~200 之間，防止誤判)
         let foundLv = '';
-        const lvMatch = text.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
-        if (lvMatch && lvMatch[1]) {
-          foundLv = lvMatch[1];
-          setLevel(foundLv);
-        } else {
-          // 備用：尋找畫面上獨立的 2 位數等級
-          const altLv = text.match(/\b([1-9][0-9]|1[0-9]{2}|200)\b/);
-          if (altLv && altLv[1]) {
-            foundLv = altLv[1];
-            setLevel(foundLv);
+        const lines = text.split('\n');
+        for (let line of lines) {
+          const match = line.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
+          if (match && match[1]) {
+            const val = Number(match[1]);
+            if (val >= 1 && val <= 200) {
+              foundLv = String(val);
+              break;
+            }
           }
         }
+        if (!foundLv) {
+          // 若無關鍵字，尋找畫面上獨立的 3 位數或合邏輯等級
+          const allPotentialLvs = text.match(/\b([1-9][0-9]|1[0-9]{2}|200)\b/g);
+          if (allPotentialLvs) {
+            const valid = allPotentialLvs.map(Number).filter(n => n >= 30 && n <= 200);
+            if (valid.length > 0) {
+              foundLv = String(valid[0]); // 通常等級數字較大或在合理區間
+            }
+          }
+        }
+        if (foundLv) setLevel(foundLv);
 
-        // 2. 🎯 經驗值抓取
+        // 2. 🎯 高精度經驗值抓取 (尋找 EXP 旁邊或長度 6~10 位的數字)
         let foundExp = '';
         const expMatch = text.match(/exp[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
           foundExp = expMatch[1].replace(/[,.]/g, '');
           setExpVal(foundExp);
         } else {
-          // 備用：抓取 6~10 位數的長數字作為經驗值
           const allNums = text.replace(/[,.]/g, '').match(/\d{6,10}/g);
           if (allNums && allNums.length > 0) {
             allNums.sort((a, b) => b.length - a.length);
@@ -327,36 +332,30 @@ export default function Home() {
           setCharNotice(`✅ 成功在截圖中核對到角色名稱：${loggedInUser}`);
         }
 
-        // 4. 🎯 強力日期核對
+        // 4. 🎯 7/30 以後日期強力核對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
-        const mStr = String(M);
-        const dStr = String(D);
-        const mmStr = String(M).padStart(2, '0');
-        const ddStr = String(D).padStart(2, '0');
+        const hasDateMatch = cleanAllText.includes('730') || 
+                             cleanAllText.includes('731') || 
+                             cleanAllText.includes('81') || 
+                             cleanAllText.includes('7/30') || 
+                             cleanAllText.includes('7/31') || 
+                             cleanAllText.includes('7月30') ||
+                             cleanAllText.includes('7月31');
 
-        const hasNumMatch = cleanAllText.includes(`${mStr}${dStr}`) || 
-                            cleanAllText.includes(`${mmStr}${ddStr}`) ||
-                            cleanAllText.includes(`731`);
-        const hasSymbolMatch = text.includes(`${M}/${D}`) || 
-                               text.includes(`${M}.${D}`) || 
-                               text.includes(`${M}月`) || 
-                               text.includes('7/31') || 
-                               text.includes('07/31');
-
-        if (hasNumMatch || hasSymbolMatch) {
-          setDateNotice(`✅ 成功在全畫面驗證今日日期標記（${M}/${D}）！`);
+        if (hasDateMatch) {
+          setDateNotice(`✅ 成功驗證截圖日期為 7/30 以後之有效起算畫面！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（${M}/${D}），管理員後台將人工審核放行！`);
+          setDateNotice(`💡 提醒：請確保截圖為 7/30 以後。若畫面日期格式特殊，管理員後台將人工審核放行！`);
         }
 
         if (foundLv || foundExp) {
-          setMsg('✨ 分析完成！等級與經驗值已自動填入。');
+          setMsg('✨ 分析完成！等級與經驗值已自動填入，若有誤差可手動微調。');
         } else {
           setMsg('💡 未能自動辨識到完整數值，請手動填入。');
         }
       }
     } catch (err) {
-      setMsg('圖片已選擇，請手動確認等級與經驗值。');
+      setMsg('圖片已選擇, 請手動確認等級與經驗值。');
     } finally {
       setScanning(false);
     }
@@ -364,14 +363,14 @@ export default function Home() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (isEnded) return alert('⏰ 活動已截止，無法再提交新成績！');
-    if (!supabase) return alert('Supabase 設定未完全');
-    if (!file) return alert('請選擇截圖照片');
-    if (!level || !expVal) return alert('請填寫或確認等級與經驗值');
-    if (!loggedInUser) return alert('登入狀態異常，請重新登入');
+    if (isEnded) return setMsg('⏰ 活動已截止，無法再提交新成績！');
+    if (!supabase) return setMsg('⚠️ Supabase 設定未完全');
+    if (!file) return setMsg('⚠️ 請選擇 7/30 以後的截圖照片');
+    if (!level || !expVal) return setMsg('⚠️ 請填寫或確認等級與經驗值');
+    if (!loggedInUser) return setMsg('⚠️ 登入狀態異常，請重新登入');
 
     setLoading(true);
-    setMsg('照片與成績上傳中...');
+    setMsg('照片與 7/30 起始成績上傳中...');
 
     try {
       const fileExt = file.name.split('.').pop();
@@ -395,19 +394,18 @@ export default function Home() {
         photo_url: photoUrl,
         status: 'approved',
         is_manually_edited: isManuallyEdited,
-        checked_by: null // 預設未核對
+        checked_by: null
       }]);
 
       if (subError) throw subError;
 
-      alert('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true); // 👈 確實解鎖排行榜
+      // 🎯 取消彈跳視窗，直接在頁面顯示成功並解鎖排行榜
+      setMsg('🎉 7/30 起始成績提交成功！排行榜已為您自動展開。');
+      setHasSubmitted(true);
       await fetchUserHistory(loggedInUser);
       await fetchLeaderboard();
-      setMsg('🎉 成績提交成功！');
     } catch (err) {
-      alert('上傳失敗：' + err.message);
-      setMsg('上傳失敗：' + err.message);
+      setMsg('❌ 上傳失敗：' + err.message);
     } finally {
       setLoading(false);
     }
@@ -424,7 +422,7 @@ export default function Home() {
 
       <div style={{ background: isEnded ? '#fef2f2' : '#f0fdf4', border: '2px solid ' + (isEnded ? '#fecdd3' : '#bbf7d0'), padding: '12px 20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h3 style={{ margin: 0, color: isEnded ? '#dc2626' : '#15803d' }}>
-          {isEnded ? '⏰ 活動已於 9月8日 07:59 正式截止結算！' : '⏱️ 活動剩餘倒數時間（結算截止：9/8 07:59）'}
+          {isEnded ? '⏰ 活動已於 9月8日 07:59 正式截止結算！' : '⏱️ 活動剩餘時間（結算截止：9/8 07:59）'}
         </h3>
         {!isEnded && (
           <p style={{ margin: '8px 0 0 0', fontSize: '18px', fontWeight: 'bold', color: '#0369a1' }}>
@@ -446,17 +444,17 @@ export default function Home() {
         <div>
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
+              <h3 style={{ margin: 0 }}>📸 上傳 7/30 以後起始成績截圖</h3>
               <button type="button" onClick={handleLogout} style={{ padding: '6px 12px', background: '#64748b', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>切換帳號 / 登出</button>
             </div>
 
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將自動填入等級與經驗值。若手動修改數值，將自動標記供管理員後台審核！
+              💡 <strong>活動公告：</strong>請各位玩家上傳<strong> 7/30 以後</strong>的經驗值起始照片！系統會自動辨識等級與經驗值。
             </div>
 
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
             {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析截圖中的資料...</p>}
@@ -501,12 +499,12 @@ export default function Home() {
 
             {isManuallyEdited && (
               <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '15px', fontWeight: 'bold' }}>
-                ⚠️ 偵測到您已手動修改數值，此筆提交將標記為「需人工審核」，管理員後台將特別檢視您的截圖。
+                ⚠️ 偵測到您已手動修改數值，此筆提交將標記為「需人工審核」，管理員後台將特別檢視您的 7/30 截圖。
               </div>
             )}
 
             <button type="submit" disabled={loading || isEnded} style={{ padding: '12px 24px', background: isEnded ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: isEnded ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
-              {isEnded ? '🔒 活動已截止停用上傳' : loading ? '提交中...' : '確認並提交成績'}
+              {isEnded ? '🔒 活動已截止停用上傳' : loading ? '提交中...' : '確認並提交 7/30 起始成績'}
             </button>
           </form>
 
@@ -532,11 +530,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 排行榜區塊 */}
+      {/* 🏆 排行榜區塊 (成功提交後直接顯示，並提供「鎖定並返回上一頁/重新輸入」按鈕) */}
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
-          <p style={{ margin: 0, fontSize: '15px' }}>請登入並<strong>完成當次截圖與成績提交</strong>，系統將為您即時解鎖練等大賽排行榜！</p>
+          <p style={{ margin: 0, fontSize: '15px' }}>請登入並<strong>完成當次 7/30 起始截圖與成績提交</strong>，系統將為您即時解鎖練等大賽排行榜！</p>
         </div>
       ) : (
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -546,7 +544,7 @@ export default function Home() {
               onClick={() => setHasSubmitted(false)} 
               style={{ padding: '6px 14px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
             >
-              🔒 鎖定並返回重新輸入資料
+              🔒 鎖定並返回上一頁
             </button>
           </div>
           
