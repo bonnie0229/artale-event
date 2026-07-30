@@ -277,7 +277,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在進行高畫質像素放大與介面解析...');
+    setMsg('⚡ 正在解析截圖數據...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -290,21 +290,22 @@ export default function Home() {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(processedImageUrl, 'eng');
+        // 🎯 開啟英中雙語辨識（eng+chi_tra），才能精準讀取「管好你自己」這類中文角色名稱
+        const result = await window.Tesseract.recognize(processedImageUrl, 'eng+chi_tra');
         const rawText = result.data.text || '';
-        const cleanRaw = rawText.toLowerCase().replace(/[\s\-_]+/g, '');
-        const cleanUser = loggedInUser.toLowerCase().replace(/[\s\-_]+/g, '');
+        const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
+        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
         // --- 1. 🎯 角色名稱比對 ---
         if (loggedInUser) {
           if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
             setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
           } else {
-            setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，幹部後台會進行最終審核。`);
+            setCharNotice(`💡 提醒：截圖中未自動比對出【${loggedInUser}】，幹部後台會進行最終審核。`);
           }
         }
 
-        // --- 2. 🎯 左下角 LV. 等級精準抓取 ---
+        // --- 2. 🎯 等級 (Lv) 抓取 ---
         let detectedLv = '';
         const lvMatch = rawText.match(/lv[\s\.:]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
 
@@ -323,7 +324,7 @@ export default function Home() {
         }
         if (detectedLv) setLevel(detectedLv);
 
-        // --- 3. 🎯 精準經驗值 (EXP) 抓取 ---
+        // --- 3. 🎯 經驗值 (EXP) 抓取 ---
         let detectedExp = '';
         const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i);
         if (expMatch && expMatch[1]) {
@@ -341,7 +342,7 @@ export default function Home() {
         const dateTargets = [
           `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
           `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
-          `${MM}${DD}`, `${YYYY}${MM}${DD}`
+          `${MM}${DD}`, `${YYYY}${MM}${DD}`, `${YYYY}/${M}/${D}`, `${YYYY}/${MM}/${DD}`
         ];
 
         let hasDate = false;
@@ -355,10 +356,10 @@ export default function Home() {
         if (hasDate) {
           setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
+          setDateNotice(`💡 提醒：若截圖包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
         }
 
-        setMsg('🎉 掃描完成！已完美對應左下角等級、經驗值與日期，請確認無誤後即可提交！');
+        setMsg('🎉 掃描完成！請確認自動代入的數值，無誤即可點擊提交！');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
@@ -455,13 +456,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取左下角 LV. 數字、經驗值與右下角日期，若有誤差可直接手動修正！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取等級、經驗值與日期，若有誤差可直接手動修正！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在解析左下角等級與右下角日期...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在解析等級、經驗值與日期...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
