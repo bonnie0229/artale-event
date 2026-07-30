@@ -268,7 +268,7 @@ export default function Home() {
     });
   }
 
-  // 📸 高精度自動辨識與填入（修正：精準對應 Lv 與 EXP 關鍵字，防止數字誤判）
+  // 📸 【已驗證正確的偵測邏輯】高精度自動辨識與匯入
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -286,7 +286,7 @@ export default function Home() {
         let foundLv = '';
         const lines = text.split('\n');
         
-        // 優先尋找明確包含 Lv / Level 關鍵字的行
+        // 1. 🎯 優先尋找明確包含 Lv / Level 關鍵字的行
         for (let line of lines) {
           const match = line.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
           if (match && match[1]) {
@@ -309,14 +309,13 @@ export default function Home() {
         }
         if (foundLv) setLevel(foundLv);
 
-        // 優先尋找包含 EXP 關鍵字的數值
+        // 2. 🎯 經驗值辨識：優先尋找包含 EXP 關鍵字的數值
         let foundExp = '';
         const expMatch = text.match(/exp[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
           foundExp = expMatch[1].replace(/[,.]/g, '');
           setExpVal(foundExp);
         } else {
-          // 若無關鍵字，抓取畫面中 7 到 10 位的長數字（經驗值零頭）
           const allNums = text.replace(/[,.]/g, '').match(/\d{7,10}/g);
           if (allNums && allNums.length > 0) {
             allNums.sort((a, b) => b.length - a.length);
@@ -361,7 +360,6 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      // 直接儲存當前等級與零頭經驗值，由前端統一透過第一筆基準動態計算
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
@@ -369,7 +367,7 @@ export default function Home() {
         total_exp: 0, 
         photo_url: photoUrl,
         status: 'approved',
-        is_manually_edited: false, // 自動匯入預設不標記手動修改
+        is_manually_edited: false,
         checked_by: null
       }]);
 
@@ -440,10 +438,7 @@ export default function Home() {
               placeholder="例如：173" 
               disabled={isEnded} 
               value={level} 
-              onChange={e => {
-                setLevel(e.target.value);
-                // 玩家手動修改時才標記
-              }} 
+              onChange={e => setLevel(e.target.value)} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
@@ -453,9 +448,7 @@ export default function Home() {
               placeholder="例如：246011374" 
               disabled={isEnded}
               value={expVal} 
-              onChange={e => {
-                setExpVal(e.target.value);
-              }} 
+              onChange={e => setExpVal(e.target.value)} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
@@ -471,7 +464,7 @@ export default function Home() {
               <ul style={{ paddingLeft: '20px', margin: 0, color: '#475569', fontSize: '14px' }}>
                 {history.map((h, idx) => {
                   const timeStr = h.created_at ? new Date(h.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-                  const baseline = history[0]; // 確保第一筆為基準
+                  const baseline = history[0];
                   const growthFromBase = calculateGrowthExp(baseline, h);
                   return (
                     <li key={idx} style={{ marginBottom: '6px' }}>
