@@ -189,7 +189,7 @@ export default function Home() {
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
-      setHasSubmitted(false); // 每次重新整理或登入，都必須重新上傳才能解鎖排行榜
+      setHasSubmitted(false);
       fetchUserHistory(cleanId);
     }
   }
@@ -243,7 +243,7 @@ export default function Home() {
     }
   }
 
-  // 📸 完整無失誤 OCR 掃描：自動抓取等級、經驗值、日期與名稱柔性提示
+  // 📸 超級精準等級與經驗值 OCR 掃描
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -282,19 +282,28 @@ export default function Home() {
             }
           }
 
-          // --- 2. 🎯 等級 (LV) 智慧抓取 ---
+          // --- 2. 🎯 超強等級 (LV) 智慧抓取 (優先抓 Lv 關鍵字，次選高段位數字) ---
           let detectedLv = '';
-          const lvRegex = /(?:lv|l\/|l\.|lvl)[\s\.:]*(\d{1,3})/i;
+          const lvRegex = /(?:lv|l\/|l\.|lvl|level)[\s\.:]*(\d{1,3})/i;
           const matchLv = rawText.match(lvRegex);
           if (matchLv && matchLv[1]) {
             detectedLv = matchLv[1];
           } else {
-            const flatLvMatch = flattenedText.match(/(?:lv|l\/|l\.|lvl)(\d{1,3})/);
+            const flatLvMatch = flattenedText.match(/(?:lv|l\/|l\.|lvl|level)(\d{1,3})/);
             if (flatLvMatch && flatLvMatch[1]) {
               detectedLv = flatLvMatch[1];
             } else {
+              // 從畫面中抓出所有 1~200 的數字
               const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-              if (nums && nums.length > 0) detectedLv = nums[0];
+              if (nums && nums.length > 0) {
+                // 優先過濾掉太小的數字（排除血量、小代號），尋找大於等於 50 的高等級數字
+                const highNums = nums.map(Number).filter(n => n >= 50 && n <= 200);
+                if (highNums.length > 0) {
+                  detectedLv = String(highNums[0]);
+                } else {
+                  detectedLv = nums[0];
+                }
+              }
             }
           }
           if (detectedLv) setLevel(detectedLv);
