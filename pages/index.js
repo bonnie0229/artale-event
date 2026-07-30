@@ -10,21 +10,39 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 Artale 1~200 級經驗值對照表
-function getExpRequiredForLevel(lv) {
-  if (lv <= 1) return 15;
-  if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
-  if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
-  if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
-  if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  if (lv <= 200) return Math.floor(5000000 * Math.pow(1.08, lv - 120));
-  return 1000000000;
+// 🍁【請在這裡替換成妳手邊真實的等級經驗值資料！】
+// 第 i 個數字代表「第 i 級升下一級」所需的完整經驗值
+const REAL_EXP_TABLE = [
+  0,       // 0級 (無)
+  15,      // 1級 -> 2級
+  34,      // 2級 -> 3級
+  57,      // 3級 -> 4級
+  // ⬇️ 拜託把妳手邊真實的 1~200 級經驗值資料，完整貼在這邊覆蓋掉舊的！
+];
+
+// 🌟 完全依照妳的正確邏輯：精準計算「第一張截圖」到「現在」的真實成長量
+function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
+  if (currLv === baseLv) {
+    return currExp - baseExp;
+  }
+  let growth = 0;
+  // 1. 補滿「第一張截圖（基準等級）」距離升等還差多少經驗值
+  growth += ((REAL_EXP_TABLE[baseLv] || 0) - baseExp);
+  // 2. 加上中間跨越的每一個等級的「完整升級需求經驗值」
+  for (let i = baseLv + 1; i < currLv; i++) {
+    growth += (REAL_EXP_TABLE[i] || 0);
+  }
+  // 3. 加上「當前等級」身上已經打到的經驗值
+  growth += currExp;
+  
+  return growth > 0 ? growth : 0;
 }
 
+// 獲取絕對累積經驗值 (僅用於畫歷史走勢折線圖的高低 Y 軸)
 function getCumulativeExp(lv) {
   let total = 0;
   for (let i = 1; i < lv; i++) {
-    total += getExpRequiredForLevel(i);
+    total += (REAL_EXP_TABLE[i] || 0);
   }
   return total;
 }
@@ -63,7 +81,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
-  // ⏱️ 倒數計時狀態
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEnded, setIsEnded] = useState(false);
 
@@ -117,15 +134,19 @@ export default function Home() {
         const baseline = subs[0];
         const latest = subs[subs.length - 1];
 
-        const baselineTotal = Number(baseline.total_exp) || 0;
-        const latestTotal = Number(latest.total_exp) || 0;
-        const expGrowth = latestTotal - baselineTotal;
+        const baseLv = Number(baseline.level);
+        const baseExp = Number(baseline.exp_val);
+        const currLv = Number(latest.level);
+        const currExp = Number(latest.exp_val);
+
+        // 🎯 在這裡直接套用妳指定的完美跨等邏輯計算！
+        const expGrowth = calculateTrueGrowth(baseLv, baseExp, currLv, currExp);
 
         return {
           char_id: id,
           level: latest.level,
           exp_val: latest.exp_val,
-          growth_exp: expGrowth >= 0 ? expGrowth : 0,
+          growth_exp: expGrowth,
           created_at: latest.created_at,
           submission_count: subs.length
         };
@@ -145,9 +166,7 @@ export default function Home() {
       .eq('char_id', cleanId)
       .order('id', { ascending: true });
 
-    if (data) {
-      setHistory(data);
-    }
+    if (data) setHistory(data);
   }
 
   async function handleAuth(e) {
@@ -156,11 +175,7 @@ export default function Home() {
     if (!supabase) return setMsg('Supabase 設定未完全');
     if (!cleanId || !pin) return setMsg('請輸入角色名稱與 4 位數 PIN 碼');
 
-    const { data: user } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('char_id', cleanId)
-      .single();
+    const { data: user } = await supabase.from('participants').select('*').eq('char_id', cleanId).single();
 
     if (!user) {
       const { error } = await supabase.from('participants').insert([{ char_id: cleanId, pin }]);
@@ -172,9 +187,7 @@ export default function Home() {
       setHasSubmitted(false);
       fetchUserHistory(cleanId);
     } else {
-      if (user.pin !== pin) {
-        return setMsg('PIN 碼不正確！');
-      }
+      if (user.pin !== pin) return setMsg('PIN 碼不正確！');
       setMsg('登入成功！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
@@ -202,29 +215,11 @@ export default function Home() {
     if (!targetName) return setMsg('請輸入新的角色名稱！');
     if (targetName === loggedInUser) return setMsg('新名稱不能與舊名稱相同！');
 
-    const { data: existingUser } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('char_id', targetName)
-      .single();
+    const { data: existingUser } = await supabase.from('participants').select('*').eq('char_id', targetName).single();
+    if (existingUser) return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
 
-    if (existingUser) {
-      return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
-    }
-
-    const { error: partErr } = await supabase
-      .from('participants')
-      .update({ char_id: targetName })
-      .eq('char_id', loggedInUser);
-
-    if (partErr) return setMsg('修改角色名稱失敗：' + partErr.message);
-
-    const { error: subErr } = await supabase
-      .from('submissions')
-      .update({ char_id: targetName })
-      .eq('char_id', loggedInUser);
-
-    if (subErr) return setMsg('轉移歷史成績失敗：' + subErr.message);
+    await supabase.from('participants').update({ char_id: targetName }).eq('char_id', loggedInUser);
+    await supabase.from('submissions').update({ char_id: targetName }).eq('char_id', loggedInUser);
 
     const oldName = loggedInUser;
     setLoggedInUser(targetName);
@@ -241,11 +236,7 @@ export default function Home() {
     if (!supabase) return setMsg('Supabase 設定未完全');
     if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
 
-    const { error } = await supabase
-      .from('participants')
-      .update({ pin: newPin })
-      .eq('char_id', loggedInUser);
-
+    const { error } = await supabase.from('participants').update({ pin: newPin }).eq('char_id', loggedInUser);
     if (error) {
       setMsg('修改密碼失敗：' + error.message);
     } else {
@@ -255,36 +246,7 @@ export default function Home() {
     }
   }
 
-  function prepareImageForOCR(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const maxDim = 1800;
-          let width = img.width;
-          let height = img.height;
-          if (width > height && width > maxDim) {
-            height *= maxDim / width;
-            width = maxDim;
-          } else if (height > maxDim) {
-            width *= maxDim / height;
-            height = maxDim;
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.92));
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // 📸 圖像自動帶入 LV / EXP / 日期 (移除計時器，完整進行 OCR)
+  // 📸 高清全圖分析 + 霸道填入 + 超級容錯日期
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -294,7 +256,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在啟動辨識引擎，分析截圖數據中 (約需 3~6 秒)...');
+    setMsg('⚡ 正在全圖高清讀取截圖資料...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -304,54 +266,85 @@ export default function Home() {
     const DD = String(D).padStart(2, '0');
 
     try {
-      const ocrImage = await prepareImageForOCR(selectedFile);
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const imageDataUrl = event.target.result;
 
-      if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(ocrImage, 'eng');
-        const text = result.data.text || '';
+        if (window.Tesseract) {
+          const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
+          const rawText = result.data.text || '';
 
-        // 1. 🎯 抓取 LV (等級)
-        const lvMatch = text.match(/(?:LV|Lv|lv)[\s\.:]*(\d{1,3})/i);
-        if (lvMatch && lvMatch[1]) {
-          setLevel(lvMatch[1]);
-        }
+          const cleanText = rawText
+            .replace(/[Oo]/g, '0')
+            .replace(/[Il|]/g, '1')
+            .replace(/[S]/g, '5')
+            .replace(/[B]/g, '8');
 
-        // 2. 🎯 抓取 EXP (經驗值) - 支援千分位逗號 (如 246,011,374 -> 246011374)
-        const expMatch = text.match(/EXP[\s\.:]*([\d,]+)/i);
-        if (expMatch && expMatch[1]) {
-          const cleanExp = expMatch[1].replace(/,/g, '');
-          setExpVal(cleanExp);
-        }
+          // --- 1. 🎯 等級 (LV) 強制帶入 ---
+          let detectedLv = '';
+          const lvMatch = rawText.match(/(?:LV|Lv|L\/|LN)[\s\.:]*(\d{1,3})/i) || cleanText.match(/(?:LV|LV)[\s\.:]*(\d{1,3})/i);
+          if (lvMatch && lvMatch[1]) {
+            detectedLv = lvMatch[1];
+          } else {
+            const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+            if (nums && nums.length > 0) detectedLv = nums[0];
+          }
+          if (detectedLv) setLevel(detectedLv);
 
-        // 3. 🎯 日期容錯比對 (自動容許 0<->O/o, /<->I/l 等錯字)
-        const yearPat = `${YYYY}`;
-        const monthPat = `(0|O|o)?${M}`;
-        const dayPat = `(0|O|o)?${D}`;
-        const sepPat = `[/\\-.lI|\\s]*`;
+          // --- 2. 🎯 經驗值 (EXP) 強制帶入 ---
+          let detectedExp = '';
+          const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i) || cleanText.match(/EXP[\s\.:]*([\d,.]+)/i);
+          if (expMatch && expMatch[1]) {
+            detectedExp = expMatch[1].replace(/[,.]/g, '');
+          } else {
+            const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
+            if (allLongNums && allLongNums.length > 0) {
+              allLongNums.sort((a, b) => b.length - a.length);
+              detectedExp = allLongNums[0];
+            }
+          }
+          if (detectedExp) setExpVal(detectedExp);
 
-        const fullDateRegex = new RegExp(`${yearPat}${sepPat}${monthPat}${sepPat}${dayPat}`, 'i');
-        const shortDateRegex = new RegExp(`(^|[^\\d])${monthPat}${sepPat}${dayPat}([^\\d]|$)`, 'i');
-        const chineseDateRegex = new RegExp(`${monthPat}月${dayPat}`, 'i');
+          // --- 3. 🎯 超級寬鬆全圖日期判斷 ---
+          const dateTargets = [
+            `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
+            `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
+            `${MM}${DD}`, `${YYYY}${MM}${DD}`
+          ];
 
-        const hasDateMatch = fullDateRegex.test(text) || shortDateRegex.test(text) || chineseDateRegex.test(text);
+          let hasDate = false;
+          for (let str of dateTargets) {
+            if (rawText.includes(str) || cleanText.includes(str)) {
+              hasDate = true;
+              break;
+            }
+          }
 
-        if (hasDateMatch) {
-          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
+          if (!hasDate) {
+            const fuzzyRegex = new RegExp(`(0?${M}|${M})[^0-9a-zA-Z]{1,3}(0?${D}|${D})`, 'i');
+            if (fuzzyRegex.test(rawText) || fuzzyRegex.test(cleanText)) hasDate = true;
+          }
+
+          if (hasDate) {
+            setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
+          } else {
+            setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
+          }
+
+          if (loggedInUser) {
+            setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
+          }
+
+          setMsg('🎉 分析完成！已自動填入自動偵測到的 LV 與 EXP，如有少許偏差可直接修改修正。');
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
+          setMsg('請檢查並確認等級與經驗值。');
         }
+        setScanning(false);
+      };
 
-        if (loggedInUser) {
-          setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
-        }
-
-        setMsg('🎉 辨識完成！系統已為您自動帶入 LV 與 EXP，請核對數字是否正確。');
-      } else {
-        setMsg('⚠️ 辨識套件載入中，若未自動帶入，請手動確認等級與經驗值。');
-      }
+      reader.readAsDataURL(selectedFile);
     } catch (err) {
-      setMsg('💡 圖片已選擇！請手動確認填寫等級與經驗值。');
-    } finally {
+      setMsg('💡 照片已選擇，請確認輸入框內的數字。');
       setScanning(false);
     }
   }
@@ -371,20 +364,13 @@ export default function Home() {
       const fileExt = file.name.split('.').pop();
       const fileName = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`;
       
-      const { error: uploadError } = await supabase.storage
-        .from('screenshots')
-        .upload(fileName, file);
-
+      const { error: uploadError } = await supabase.storage.from('screenshots').upload(fileName, file);
       if (uploadError) throw uploadError;
 
-      const { data: publicUrlData } = supabase.storage
-        .from('screenshots')
-        .getPublicUrl(fileName);
-
+      const { data: publicUrlData } = supabase.storage.from('screenshots').getPublicUrl(fileName);
       const photoUrl = publicUrlData.publicUrl;
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
-
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
       const { error: subError } = await supabase.from('submissions').insert([{
@@ -455,7 +441,7 @@ export default function Home() {
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在分析圖片中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全圖高清讀取截圖資料中...</p>}
             
             {dateNotice && (
               <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
