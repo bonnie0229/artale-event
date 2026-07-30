@@ -6,16 +6,13 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 Artale 120~200 級精準 1.05 倍對照
 function getExpRequiredForLevel(lv) {
   if (lv < 120) return 0;
   return Math.floor(29715818 * Math.pow(1.05, lv - 120));
 }
 
-// 🎯 計算兩筆紀錄之間的經驗成長量
 function calculateExpBetween(prev, curr) {
   if (!prev || !curr) return 0;
   const baseLv = Number(prev.level);
@@ -23,12 +20,8 @@ function calculateExpBetween(prev, curr) {
   const currLv = Number(curr.level);
   const currExp = Number(curr.exp_val) || 0;
 
-  if (currLv === baseLv) {
-    return Math.max(0, currExp - baseExp);
-  }
-  if (currLv < baseLv) {
-    return 0;
-  }
+  if (currLv === baseLv) return Math.max(0, currExp - baseExp);
+  if (currLv < baseLv) return 0;
 
   let totalGrowth = 0;
   const baseLevelReq = getExpRequiredForLevel(baseLv);
@@ -37,7 +30,6 @@ function calculateExpBetween(prev, curr) {
   for (let l = baseLv + 1; l < currLv && l <= 200; l++) {
     totalGrowth += getExpRequiredForLevel(l);
   }
-
   totalGrowth += currExp;
   return totalGrowth;
 }
@@ -428,7 +420,6 @@ export default function Home() {
             </button>
           </form>
 
-          {/* 📜 個人歷史提交紀錄與成長曲線明細 */}
           {history.length > 0 && (
             <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>📈 您的成長曲線與每次提交經驗明細</h4>
@@ -458,7 +449,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* ⚙️ 個人帳號管理設定 */}
           <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
             <form onSubmit={handleUpdatePin} style={{ marginBottom: '15px' }}>
@@ -480,7 +470,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 排行榜區塊 */}
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
