@@ -7,10 +7,10 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)[cite: 1]
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 根據精準規則自動生成 1~200 級經驗值對照表（120等基準 + 1.05倍）[cite: 1]
+// 🍁 根據精準規則自動生成 1~200 級經驗值對照表（120等基準 + 1.05倍）
 function getExpRequiredForLevel(lv) {
   if (lv <= 0) return 0;
   if (lv === 120) return 29715818;
@@ -33,7 +33,7 @@ for (let i = 0; i <= 200; i++) {
   REAL_EXP_TABLE[i] = getExpRequiredForLevel(i);
 }
 
-// 🌟 精準跨等成長計算邏輯[cite: 1]
+// 🌟 精準跨等成長計算邏輯
 function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
   if (currLv === baseLv) {
     return currExp - baseExp;
@@ -55,7 +55,7 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 完整正式獎勵標籤[cite: 1]
+// 🎁 完整正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -244,7 +244,7 @@ export default function Home() {
     }
   }
 
-  // 📸 Canvas 圖片放大預處理（保持像素銳利）[cite: 1]
+  // 📸 Canvas 圖片放大預處理（保持像素銳利）
   async function preprocessAndScaleImage(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -291,42 +291,36 @@ export default function Home() {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
-        // 🔐 啟用雙語辨識[cite: 1]
         const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
         const rawText = result.data.text || '';
         const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
-        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        console.log("OCR 辨識原始文字：", rawText);
-
-        // --- 1. 🎯 角色名稱核對（不顯示冗員提示） ---
+        // --- 1. 🎯 名稱核對（非本人或未辨識時才交由後台審核） ---
         const normalizedRaw = rawText.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
         const normalizedUser = loggedInUser.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+        
         if (loggedInUser && (normalizedRaw.includes(normalizedUser) || rawText.includes(loggedInUser))) {
-          setCharNotice(`✅ 角色名稱核對成功`);
+          setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
         } else {
-          setCharNotice(`💡 系統將由後台進行審核確認`);
+          setCharNotice(`⚠️ 提醒：截圖中未檢測到相符名稱【${loggedInUser}】，將交由後台人工審核！`);
         }
 
-        // --- 2. 🎯 等級 (Lv) 嚴格精準抓取 ---
+        // --- 2. 🎯 等級 (Lv) 嚴格抓取（絕不亂猜） ---
         let detectedLv = '';
-        const lvPatterns = [
-          /(?:lv|lvl|level)[\s.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i,
-          /l[\s.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i
-        ];
-        for (const pattern of lvPatterns) {
-          const match = rawText.match(pattern) || cleanRaw.match(pattern);
-          if (match && match[1]) {
-            const val = Number(match[1]);
-            if (val >= 1 && val <= 200) {
-              detectedLv = String(val);
-              break;
-            }
+        const lvMatch = rawText.match(/(?:lv|lvl|level|等級)[\s\.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i);
+        if (lvMatch && lvMatch[1]) {
+          const val = Number(lvMatch[1]);
+          if (val >= 1 && val <= 200) {
+            detectedLv = String(val);
           }
         }
-        if (detectedLv) setLevel(detectedLv);
+        if (detectedLv) {
+          setLevel(detectedLv);
+        } else {
+          setLevel(''); // 未精準對應就不填，避免抓錯
+        }
 
-        // --- 3. 🎯 經驗值 (EXP) 抓取[cite: 1] ---
+        // --- 3. 🎯 經驗值 (EXP) 抓取 ---
         let detectedExp = '';
         const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || cleanRaw.match(/exp\[?(\d{5,12})/i);
         if (expMatch && expMatch[1]) {
@@ -340,7 +334,7 @@ export default function Home() {
         }
         if (detectedExp) setExpVal(detectedExp);
 
-        // --- 4. 🎯 日期核對[cite: 1] ---
+        // --- 4. 🎯 日期核對（未偵測到今日日期時提示交由後台審核） ---
         const dateTargets = [
           `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
           `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
@@ -358,7 +352,7 @@ export default function Home() {
         if (hasDate) {
           setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），將交由後台審核。`);
+          setDateNotice(`⚠️ 提醒：未在畫面中偵測到今日日期（${M}/${D}），將交由後台審核！`);
         }
 
         setMsg('🎉 掃描完成！請確認自動代入的數值，若有誤差可直接手動修正。');
