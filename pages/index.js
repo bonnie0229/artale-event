@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
+import Script from 'next/script';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -49,7 +50,7 @@ export default function Home() {
   const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false); // 🔒 每次開啟需上傳才解鎖
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
@@ -75,7 +76,6 @@ export default function Home() {
       fetchUserHistory(savedUser);
     }
 
-    // 啟動倒數計時器
     const timer = setInterval(() => {
       const now = new Date().getTime();
       const difference = DEADLINE - now;
@@ -256,18 +256,6 @@ export default function Home() {
     }
   }
 
-  // ⚡ 動態確保 Tesseract 辨識套件加載完成 (防卡死、不失效)
-  function ensureTesseractLoaded() {
-    return new Promise((resolve, reject) => {
-      if (window.Tesseract) return resolve(window.Tesseract);
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-      script.onload = () => resolve(window.Tesseract);
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-
   function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -297,11 +285,12 @@ export default function Home() {
     });
   }
 
-  // 📸 精準圖像自動帶入 LV / EXP / 日期
+  // 📸 大幅升級：極速分析圖像 + 錯字容錯 + 超時保護機制
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
+    
     setFile(selectedFile);
     setScanning(true);
     setDateNotice('');
@@ -315,41 +304,49 @@ export default function Home() {
     const MM = String(M).padStart(2, '0');
     const DD = String(D).padStart(2, '0');
 
-    const mmddStr = `${MM}${DD}`;
-    const mddStr = `${M}${DD}`;
+    // 🛡️ 超時機制：最多辨識 6 秒，逾時自動解鎖供使用者手動輸入，絕不卡住！
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('辨識超時')), 6000)
+    );
 
     try {
-      const TesseractObj = await ensureTesseractLoaded();
-      const ocrImage = await prepareImageForOCR(selectedFile);
+      const ocrPromise = (async () => {
+        const ocrImage = await prepareImageForOCR(selectedFile);
+        if (window.Tesseract) {
+          const result = await window.Tesseract.recognize(ocrImage, 'eng');
+          return result.data.text;
+        }
+        return '';
+      })();
 
-      if (TesseractObj) {
-        const result = await TesseractObj.recognize(ocrImage, 'eng');
-        const text = result.data.text;
+      const text = await Promise.race([ocrPromise, timeoutPromise]);
 
+      if (text) {
         // 1. 🎯 抓取 LV (等級)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
-        if (lvMatch && lvMatch[1]) {
-          setLevel(lvMatch[1]);
-        }
+        if (lvMatch && lvMatch[1]) setLevel(lvMatch[1]);
 
         // 2. 🎯 抓取 EXP (經驗值)
         const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
-        if (expMatch && expMatch[1]) {
-          setExpVal(expMatch[1]);
-        }
+        if (expMatch && expMatch[1]) setExpVal(expMatch[1]);
 
-        // 3. 🎯 驗證今日日期 (工作列/聊天室/頻道)
-        const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
-        const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
-        const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
-        const pattern4 = new RegExp(`(${mmddStr}|${mddStr})`, 'i');
+        // 3. 🛡️ 超強容錯日期匹配 (自動容許 0<->O/o, /<->I/l/| 等 OCR 誤判錯字)
+        const yearPat = `${YYYY}`;
+        const monthPat = `(0|O|o)?${M}`;
+        const dayPat = `(0|O|o)?${D}`;
+        const sepPat = `[/\\-.lI|\\s]*`;
 
-        const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text) || pattern4.test(text);
+        // 包含 7/30、0730、O73O、7月30日 等容錯組合
+        const fullDateRegex = new RegExp(`${yearPat}${sepPat}${monthPat}${sepPat}${dayPat}`, 'i');
+        const shortDateRegex = new RegExp(`(^|[^\\d])${monthPat}${sepPat}${dayPat}([^\\d]|$)`, 'i');
+        const chineseDateRegex = new RegExp(`${monthPat}月${dayPat}`, 'i');
+
+        const hasDateMatch = fullDateRegex.test(text) || shortDateRegex.test(text) || chineseDateRegex.test(text);
 
         if (hasDateMatch) {
           setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工核對。`);
+          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
         }
 
         if (loggedInUser) {
@@ -357,11 +354,13 @@ export default function Home() {
         }
 
         setMsg('✨ 分析完成！請檢查自動帶入的 LV 與 EXP 數字，若有偏差可直接手動修改。');
+      } else {
+        setMsg('請檢查並手動確認填寫等級與經驗值。');
       }
     } catch (err) {
-      setMsg('圖片已選擇，請手動確認等級與經驗值。');
+      setMsg('💡 圖片已選擇！若數據未自動填入，請直接在下方手動輸入 LV 與 EXP 即可提交。');
     } finally {
-      setScanning(false);
+      setScanning(false); // 🔒 100% 確保解除掃描狀態，絕不卡住！
     }
   }
 
@@ -408,7 +407,7 @@ export default function Home() {
       if (subError) throw subError;
 
       setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true); // 🔓 當次提交成功，正式解鎖排行榜！
+      setHasSubmitted(true);
       fetchLeaderboard();
       fetchUserHistory(loggedInUser);
     } catch (err) {
@@ -422,12 +421,13 @@ export default function Home() {
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <Head>
         <title>Artale 夏日練等大賽</title>
-        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
+      
+      {/* 🚀 Next.js 官方標準載入器 (穩定且快) */}
+      <Script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" strategy="afterInteractive" />
 
       <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale 夏日練等大賽</h1>
 
-      {/* ⏱️ 醒目的活動倒數計時橫幅 */}
       <div style={{ background: isEnded ? '#fef2f2' : '#f0fdf4', border: '2px solid ' + (isEnded ? '#fecdd3' : '#bbf7d0'), padding: '12px 20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h3 style={{ margin: 0, color: isEnded ? '#dc2626' : '#15803d' }}>
           {isEnded ? '⏰ 活動已於 9月8日 07:59 正式截止結算！' : '⏱️ 活動剩餘倒數時間（結算截止：9/8 07:59）'}
@@ -450,7 +450,6 @@ export default function Home() {
         </form>
       ) : (
         <div>
-          {/* 回報成績表單 */}
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
@@ -540,7 +539,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* ⚙️ 個人設定區（改名與修改密碼） */}
           <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
             <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
             
