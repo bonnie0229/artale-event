@@ -9,22 +9,19 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
+// 🍁 Artale 120~200 級精準 1.05 倍對照
 function getExpRequiredForLevel(lv) {
-  if (lv <= 1) return 15;
-  if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
-  if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
-  if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
-  if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  if (lv <= 200) return Math.floor(5000000 * Math.pow(1.05, lv - 120));
-  return 2000000000;
+  if (lv < 120) return 0;
+  return Math.floor(29715818 * Math.pow(1.05, lv - 120));
 }
 
-function calculateGrowthExp(baseline, latest) {
-  if (!baseline || !latest) return 0;
-  const baseLv = Number(baseline.level);
-  const baseExp = Number(baseline.exp_val) || 0;
-  const currLv = Number(latest.level);
-  const currExp = Number(latest.exp_val) || 0;
+// 🎯 計算兩筆紀錄之間的經驗成長量
+function calculateExpBetween(prev, curr) {
+  if (!prev || !curr) return 0;
+  const baseLv = Number(prev.level);
+  const baseExp = Number(prev.exp_val) || 0;
+  const currLv = Number(curr.level);
+  const currExp = Number(curr.exp_val) || 0;
 
   if (currLv === baseLv) {
     return Math.max(0, currExp - baseExp);
@@ -43,6 +40,10 @@ function calculateGrowthExp(baseline, latest) {
 
   totalGrowth += currExp;
   return totalGrowth;
+}
+
+function calculateGrowthExp(baseline, latest) {
+  return calculateExpBetween(baseline, latest);
 }
 
 function getPrizeBadge(rank) {
@@ -254,13 +255,12 @@ export default function Home() {
     });
   }
 
-  // 📸 【安全防呆辨識】若辨識不出或數值異常則不強制覆蓋，並提示手動確認
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setMsg('🔍 正在掃描截圖...');
+    setMsg('🔍 正在強效解析截圖中的數值...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -271,19 +271,17 @@ export default function Home() {
         
         const allNums = fullText.replace(/[,.]/g, ' ').match(/\b\d+\b/g) || [];
         
-        // 嚴格篩選高等玩家等級（例如 100~200 等，避免抓到 30 或 40 等低級干擾）
         const validLvs = allNums.map(Number).filter(n => n >= 100 && n <= 200);
         if (validLvs.length > 0) {
           setLevel(String(validLvs[0]));
         }
 
-        // 經驗值抓取 8~9 位數
-        const expCandidates = allNums.filter(numStr => numStr.length === 8 || numStr.length === 9);
+        const expCandidates = allNums.filter(numStr => numStr.length >= 8 && numStr.length <= 11);
         if (expCandidates.length > 0) {
           setExpVal(expCandidates[0]);
         }
 
-        setMsg('✨ 截圖已上傳！請確認下方填入的等級與經驗值是否正確，若有誤差請直接手動修改。');
+        setMsg('✨ 自動辨識完成！數值已自動填入，請核對是否正確。');
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -379,32 +377,32 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後，系統會嘗試輔助填入數值。<strong>請務必親自核對下方等級與經驗值是否正確，若有誤差可直接手動修改！</strong>
+              💡 <strong>操作說明：</strong>系統會自動辨識並填入數值。若有誤差可直接手動修改！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在掃描截圖...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析截圖中的數值...</p>}
 
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv) <span style={{color: 'red', fontSize: '12px'}}>*請務必核對是否正確</span>：</label>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
             <input 
               type="number" 
               placeholder="例如：173" 
               disabled={isEnded} 
               value={level} 
               onChange={e => setLevel(e.target.value)} 
-              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '2px solid #2563eb', boxSizing: 'border-box', background: '#fff' }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP) <span style={{color: 'red', fontSize: '12px'}}>*請務必核對是否正確</span>：</label>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
             <input 
               type="number" 
               placeholder="例如：246011374" 
               disabled={isEnded}
               value={expVal} 
               onChange={e => setExpVal(e.target.value)} 
-              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '2px solid #2563eb', boxSizing: 'border-box', background: '#fff' }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
             <button type="submit" disabled={loading || isEnded} style={{ padding: '12px 24px', background: isEnded ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: isEnded ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
@@ -412,18 +410,29 @@ export default function Home() {
             </button>
           </form>
 
-          {/* 📜 個人歷史提交紀錄與成長明細 */}
+          {/* 📜 個人歷史提交紀錄與成長曲線明細 */}
           {history.length > 0 && (
             <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-              <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>📊 您的歷史成績與跨等成長紀錄明細</h4>
+              <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>📈 您的成長曲線與每次提交經驗明細</h4>
               <ul style={{ paddingLeft: '20px', margin: 0, color: '#475569', fontSize: '14px' }}>
                 {history.map((h, idx) => {
                   const timeStr = h.created_at ? new Date(h.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                  const prevRecord = idx > 0 ? history[idx - 1] : null;
+                  const addedExp = prevRecord ? calculateExpBetween(prevRecord, h) : 0;
                   const baseline = history[0];
-                  const growthFromBase = calculateGrowthExp(baseline, h);
+                  const totalGrowth = calculateGrowthExp(baseline, h);
+
                   return (
-                    <li key={idx} style={{ marginBottom: '6px' }}>
-                      第 {idx + 1} 次紀錄 — 等級：<strong>Lv.{h.level}</strong>，經驗值零頭：<code>{Number(h.exp_val).toLocaleString()}</code>，累積總成長：<code style={{ color: '#16a34a', fontWeight: 'bold' }}>+{growthFromBase.toLocaleString()}</code> ({timeStr})
+                    <li key={idx} style={{ marginBottom: '8px', borderBottom: '1px dashed #f1f5f9', paddingBottom: '4px' }}>
+                      第 {idx + 1} 次紀錄 ({timeStr}) — <strong>Lv.{h.level}</strong> (零頭: {Number(h.exp_val).toLocaleString()}) 
+                      {idx === 0 ? (
+                        <span style={{ color: '#0284c7', marginLeft: '8px', fontWeight: 'bold' }}>[7/30 起始基準點]</span>
+                      ) : (
+                        <span style={{ color: '#16a34a', fontWeight: 'bold', marginLeft: '8px' }}>
+                          ✨ 本次成長：+{addedExp.toLocaleString()} EXP
+                        </span>
+                      )}
+                      <span style={{ color: '#64748b', fontSize: '12px', marginLeft: '8px' }}>(累計總成長：+{totalGrowth.toLocaleString()})</span>
                     </li>
                   );
                 })}
