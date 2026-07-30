@@ -157,8 +157,8 @@ export default function Home() {
   async function handleAuth(e) {
     e.preventDefault();
     const cleanId = charId.trim();
-    if (!supabase) return setMsg('Supabase 設定未完全');
-    if (!cleanId || !pin) return setMsg('請輸入角色名稱與 4 位數 PIN 碼');
+    if (!supabase) return alert('Supabase 設定未完全');
+    if (!cleanId || !pin) return alert('請輸入角色名稱與 4 位數 PIN 碼');
 
     const { data: user } = await supabase
       .from('participants')
@@ -168,8 +168,8 @@ export default function Home() {
 
     if (!user) {
       const { error } = await supabase.from('participants').insert([{ char_id: cleanId, pin }]);
-      if (error) return setMsg('註冊失敗：' + error.message);
-      setMsg('註冊成功並登入！');
+      if (error) return alert('註冊失敗：' + error.message);
+      alert('註冊成功並登入！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
@@ -177,9 +177,9 @@ export default function Home() {
       fetchUserHistory(cleanId);
     } else {
       if (user.pin !== pin) {
-        return setMsg('PIN 碼不正確！');
+        return alert('PIN 碼不正確！');
       }
-      setMsg('登入成功！');
+      alert('登入成功！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
@@ -201,13 +201,13 @@ export default function Home() {
 
   async function handleRename(e) {
     e.preventDefault();
-    if (!supabase) return setMsg('Supabase 設定未完全');
+    if (!supabase) return alert('Supabase 設定未完全');
     const targetName = newCharIdInput.trim();
-    if (!targetName) return setMsg('請輸入新的角色名稱！');
-    if (targetName === loggedInUser) return setMsg('新名稱不能與舊名稱相同！');
+    if (!targetName) return alert('請輸入新的角色名稱！');
+    if (targetName === loggedInUser) return alert('新名稱不能與舊名稱相同！');
 
     const { data: existingUser } = await supabase.from('participants').select('*').eq('char_id', targetName).single();
-    if (existingUser) return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
+    if (existingUser) return alert(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
 
     await supabase.from('participants').update({ char_id: targetName }).eq('char_id', loggedInUser);
     await supabase.from('submissions').update({ char_id: targetName }).eq('char_id', loggedInUser);
@@ -216,7 +216,7 @@ export default function Home() {
     setLoggedInUser(targetName);
     localStorage.setItem('artale_user', targetName);
     setNewCharIdInput('');
-    setMsg(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
+    alert(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
     
     fetchUserHistory(targetName);
     fetchLeaderboard();
@@ -224,8 +224,8 @@ export default function Home() {
 
   async function handleUpdatePin(e) {
     e.preventDefault();
-    if (!supabase) return setMsg('Supabase 設定未完全');
-    if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
+    if (!supabase) return alert('Supabase 設定未完全');
+    if (!newPin || newPin.length !== 4) return alert('新密碼必須是 4 位數字！');
 
     const { error } = await supabase
       .from('participants')
@@ -233,11 +233,11 @@ export default function Home() {
       .eq('char_id', loggedInUser);
 
     if (error) {
-      setMsg('修改密碼失敗：' + error.message);
+      alert('修改密碼失敗：' + error.message);
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！');
+      alert('密碼已成功修改為新密碼！');
     }
   }
 
@@ -270,7 +270,7 @@ export default function Home() {
     });
   }
 
-  // 📸 強力自動辨識並填入 (雙軌日期 + 精準關鍵字抓取)
+  // 📸 精準鎖定等級與經驗值數字
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -292,26 +292,28 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 1. 🎯 自動帶入等級 (Lv)
+        // 1. 🎯 更精準抓取等級 (尋找 Lv 或 Level 後面的 1~3 位數)
         let foundLv = '';
-        const lvMatch = text.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i) || text.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/);
+        const lvRegex = /(?:lv|level|l\/|ln)[\s\.:]*([1-9][0-9]?|1[0-9]{2}|200)/i;
+        const lvMatch = text.match(lvRegex);
         if (lvMatch && lvMatch[1]) {
           foundLv = lvMatch[1];
           setLevel(foundLv);
         }
 
-        // 2. 🎯 自動帶入經驗值 (EXP)
+        // 2. 🎯 更精準抓取經驗值 (尋找 EXP 旁邊或帶逗號/點的數字，或畫面上最大的 6~10 位數)
         let foundExp = '';
-        const expMatch = text.match(/EXP[\s\.:]*([\d,.]+)/i);
+        const expRegex = /exp[\s\.:]*([\d,.]+)/i;
+        const expMatch = text.match(expRegex);
         if (expMatch && expMatch[1]) {
           foundExp = expMatch[1].replace(/[,.]/g, '');
           setExpVal(foundExp);
         } else {
-          // 若無 EXP 關鍵字，抓畫面上最長的數字作為經驗值
-          const allLongNums = text.replace(/[,.]/g, '').match(/\d{5,12}/g);
-          if (allLongNums && allLongNums.length > 0) {
-            allLongNums.sort((a, b) => b.length - a.length);
-            foundExp = allLongNums[0];
+          // 若無 EXP 關鍵字，抓畫面上所有 6 位數以上的數字，取最合理的值
+          const allNums = text.replace(/[,.]/g, '').match(/\d{6,10}/g);
+          if (allNums && allNums.length > 0) {
+            allNums.sort((a, b) => b.length - a.length);
+            foundExp = allNums[0];
             setExpVal(foundExp);
           }
         }
@@ -325,7 +327,7 @@ export default function Home() {
           }
         }
 
-        // 4. 🎯 強力寬鬆日期比對
+        // 4. 🎯 日期核對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
         const mStr = String(M);
         const dStr = String(D);
@@ -333,23 +335,13 @@ export default function Home() {
         const ddStr = String(D).padStart(2, '0');
 
         const hasNumMatch = cleanAllText.includes(`${mStr}${dStr}`) || 
-                            cleanAllText.includes(`${mmStr}${ddStr}`) ||
-                            cleanAllText.includes(`${mStr}${ddStr}`) ||
-                            cleanAllText.includes(`${mmStr}${dStr}`);
-
-        const hasSymbolMatch = text.includes(`${M}/${D}`) || 
-                               text.includes(`${MM}/${DD}`) || 
-                               text.includes(`${M}.${D}`) || 
-                               text.includes(`${M}-${D}`) ||
-                               text.includes(`${M}月`) ||
-                               text.includes(`${D}日`) ||
-                               text.includes('7/31') ||
-                               text.includes('07/31');
+                            cleanAllText.includes(`${mmStr}${ddStr}`);
+        const hasSymbolMatch = text.includes(`${M}/${D}`) || text.includes(`${M}.${D}`) || text.includes(`${M}月`) || text.includes('7/31');
 
         if (hasNumMatch || hasSymbolMatch) {
           setDateNotice(`✅ 成功在全畫面驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若右下角確定有今日日期（${M}/${D}），管理員後台將人工審核放行！`);
+          setDateNotice(`💡 提醒：若畫面右下角確定有今日日期（${M}/${D}），後台將人工審核放行！`);
         }
 
         if (foundLv || foundExp) {
@@ -367,11 +359,11 @@ export default function Home() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (isEnded) return setMsg('⏰ 活動已截止，無法再提交新成績！');
-    if (!supabase) return setMsg('Supabase 設定未完全');
-    if (!file) return setMsg('請選擇截圖照片');
-    if (!level || !expVal) return setMsg('請填寫或確認等級與經驗值');
-    if (!loggedInUser) return setMsg('登入狀態異常，請重新登入');
+    if (isEnded) return alert('⏰ 活動已截止，無法再提交新成績！');
+    if (!supabase) return alert('Supabase 設定未完全');
+    if (!file) return alert('請選擇截圖照片');
+    if (!level || !expVal) return alert('請填寫或確認等級與經驗值');
+    if (!loggedInUser) return alert('登入狀態異常，請重新登入');
 
     setLoading(true);
     setMsg('照片與成績上傳中...');
@@ -390,6 +382,7 @@ export default function Home() {
 
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
+      // 🔍 提交資料至 Supabase
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
@@ -402,11 +395,13 @@ export default function Home() {
 
       if (subError) throw subError;
 
-      setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
+      alert('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
       setHasSubmitted(true);
       await fetchUserHistory(loggedInUser);
       await fetchLeaderboard();
+      setMsg('🎉 成績提交成功！');
     } catch (err) {
+      alert('上傳失敗：' + err.message);
       setMsg('上傳失敗：' + err.message);
     } finally {
       setLoading(false);
