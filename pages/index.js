@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+Import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { createClient } from '@supabase/supabase-js';
 
@@ -10,22 +10,33 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 Artale 1~200 級每級所需經驗值對照表 (用於精準換算累積總經驗值)
-function getExpRequiredForLevel(lv) {
-  if (lv <= 1) return 15;
-  if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
-  if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
-  if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
-  if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  if (lv <= 200) return Math.floor(5000000 * Math.pow(1.08, lv - 120));
-  return 1000000000;
+// 🍁【請在這裡保持妳手邊真實的等級經驗值資料！】
+const REAL_EXP_TABLE = [
+  0,       // 0級
+  15,      // 1級 -> 2級
+  34,      // 2級 -> 3級
+  57,      // 3級 -> 4級
+  // ⬇️ 拜託把妳手邊真實的 1~200 級經驗值資料完整貼在這邊！
+];
+
+// 🌟 精準跨等成長計算邏輯
+function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
+  if (currLv === baseLv) {
+    return currExp - baseExp;
+  }
+  let growth = 0;
+  growth += ((REAL_EXP_TABLE[baseLv] || 0) - baseExp);
+  for (let i = baseLv + 1; i < currLv; i++) {
+    growth += (REAL_EXP_TABLE[i] || 0);
+  }
+  growth += currExp;
+  return growth > 0 ? growth : 0;
 }
 
-// 計算 1 級到特定等級的累積總經驗值
 function getCumulativeExp(lv) {
   let total = 0;
   for (let i = 1; i < lv; i++) {
-    total += getExpRequiredForLevel(i);
+    total += (REAL_EXP_TABLE[i] || 0);
   }
   return total;
 }
@@ -46,7 +57,7 @@ function getPrizeBadge(rank) {
 export default function Home() {
   const [charId, setCharId] = useState('');
   const [pin, setPin] = useState('');
-  const [loggedInUser, setLoggedInUser] = useState(''); // 🔒 鎖定目前登入的角色名稱
+  const [loggedInUser, setLoggedInUser] = useState('');
   const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -67,14 +78,12 @@ export default function Home() {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEnded, setIsEnded] = useState(false);
 
-  // 初始化檢查 LocalStorage 紀錄
   useEffect(() => {
     const savedUser = localStorage.getItem('artale_user');
     if (savedUser) {
       setLoggedInUser(savedUser);
       setIsLoggedIn(true);
       fetchUserHistory(savedUser);
-      fetchLeaderboard();
     }
 
     const timer = setInterval(() => {
@@ -96,39 +105,36 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  // 🏆 計算全伺服器每位玩家的「累積成長經驗值」
   async function fetchLeaderboard() {
     if (!supabase) return;
-    const { data } = await supabase
-      .from('submissions')
-      .select('*')
-      .order('id', { ascending: true });
+    const { data } = await supabase.from('submissions').select('*').order('id', { ascending: true });
 
     if (data && data.length > 0) {
       const userGroup = {};
       data.forEach(sub => {
         const cleanName = (sub.char_id || '').trim();
         if (!cleanName) return;
-        if (!userGroup[cleanName]) {
-          userGroup[cleanName] = [];
-        }
+        if (!userGroup[cleanName]) userGroup[cleanName] = [];
         userGroup[cleanName].push(sub);
       });
 
       const list = Object.keys(userGroup).map(id => {
         const subs = userGroup[id];
-        const baseline = subs[0]; // 第一次提交（活動初始基準）
-        const latest = subs[subs.length - 1]; // 最新一次提交
+        const baseline = subs[0];
+        const latest = subs[subs.length - 1];
 
-        const baselineTotal = Number(baseline.total_exp) || 0;
-        const latestTotal = Number(latest.total_exp) || 0;
-        const expGrowth = latestTotal - baselineTotal;
+        const baseLv = Number(baseline.level);
+        const baseExp = Number(baseline.exp_val);
+        const currLv = Number(latest.level);
+        const currExp = Number(latest.exp_val);
+
+        const expGrowth = calculateTrueGrowth(baseLv, baseExp, currLv, currExp);
 
         return {
           char_id: id,
           level: latest.level,
           exp_val: latest.exp_val,
-          growth_exp: expGrowth >= 0 ? expGrowth : 0,
+          growth_exp: expGrowth,
           created_at: latest.created_at,
           submission_count: subs.length
         };
@@ -142,21 +148,8 @@ export default function Home() {
   async function fetchUserHistory(id) {
     if (!supabase) return;
     const cleanId = id.trim();
-    const { data } = await supabase
-      .from('submissions')
-      .select('*')
-      .eq('char_id', cleanId)
-      .order('id', { ascending: true });
-
-    if (data) {
-      setHistory(data);
-      if (data.length > 0) {
-        setHasSubmitted(true);
-        fetchLeaderboard();
-      } else {
-        setHasSubmitted(false);
-      }
-    }
+    const { data } = await supabase.from('submissions').select('*').eq('char_id', cleanId).order('id', { ascending: true });
+    if (data) setHistory(data);
   }
 
   async function handleAuth(e) {
@@ -165,11 +158,7 @@ export default function Home() {
     if (!supabase) return setMsg('Supabase 設定未完全');
     if (!cleanId || !pin) return setMsg('請輸入角色名稱與 4 位數 PIN 碼');
 
-    const { data: user } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('char_id', cleanId)
-      .single();
+    const { data: user } = await supabase.from('participants').select('*').eq('char_id', cleanId).single();
 
     if (!user) {
       const { error } = await supabase.from('participants').insert([{ char_id: cleanId, pin }]);
@@ -181,9 +170,7 @@ export default function Home() {
       setHasSubmitted(false);
       fetchUserHistory(cleanId);
     } else {
-      if (user.pin !== pin) {
-        return setMsg('PIN 碼不正確！');
-      }
+      if (user.pin !== pin) return setMsg('PIN 碼不正確！');
       setMsg('登入成功！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
@@ -229,13 +216,10 @@ export default function Home() {
 
   async function handleUpdatePin(e) {
     e.preventDefault();
+    if (!supabase) return setMsg('Supabase 設定未完全');
     if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
 
-    const { error } = await supabase
-      .from('participants')
-      .update({ pin: newPin })
-      .eq('char_id', loggedInUser);
-
+    const { error } = await supabase.from('participants').update({ pin: newPin }).eq('char_id', loggedInUser);
     if (error) {
       setMsg('修改密碼失敗：' + error.message);
     } else {
@@ -273,7 +257,7 @@ export default function Home() {
           const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
           const rawText = result.data.text || '';
 
-          // 🧹 徹底清除所有空白與換行，把字串全部連在一起轉小寫
+          // 🧹 徹底清除所有空白與換行，把字串全部連在一起轉小寫，解決 OCR 拆字問題
           const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
           const cleanUser = loggedInUser.replace(/\s+/g, '').toLowerCase();
 
@@ -293,10 +277,12 @@ export default function Home() {
           if (matchLv && matchLv[1]) {
             detectedLv = matchLv[1];
           } else {
+            // 如果沒抓到關鍵字，在扁平化文字裡找 Lv 後面的數字
             const flatLvMatch = flattenedText.match(/(?:lv|l\/|ln)(\d{1,3})/);
             if (flatLvMatch && flatLvMatch[1]) {
               detectedLv = flatLvMatch[1];
             } else {
+              // 備用方案：抓畫面上合理的 1~200 數字
               const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
               if (nums && nums.length > 0) detectedLv = nums[0];
             }
@@ -476,13 +462,13 @@ export default function Home() {
             </button>
           </form>
 
-          {/* 📈 角色經驗值走勢圖與歷史明細表格 */}
+          {/* 📈 角色經驗值走勢圖 */}
           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢與歷史紀錄</h3>
+            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢</h3>
             {history.length < 2 ? (
-              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '15px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
+              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
             ) : (
-              <div style={{ width: '100%', overflowX: 'auto', marginBottom: '20px' }}>
+              <div style={{ width: '100%', overflowX: 'auto' }}>
                 <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
                   {(() => {
                     const maxExp = Math.max(...history.map(h => h.total_exp || 0));
@@ -514,43 +500,6 @@ export default function Home() {
                     );
                   })()}
                 </svg>
-              </div>
-            )}
-
-            {history.length > 0 && (
-              <div>
-                <h4 style={{ margin: '15px 0 10px 0', color: '#334155', fontSize: '15px' }}>📜 個人歷次回報明細：</h4>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '8px' }}>次數</th>
-                        <th style={{ padding: '8px' }}>等級</th>
-                        <th style={{ padding: '8px' }}>經驗值 (EXP)</th>
-                        <th style={{ padding: '8px' }}>截圖證明</th>
-                        <th style={{ padding: '8px' }}>回報時間</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((h, idx) => {
-                        const timeStr = h.created_at ? new Date(h.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間';
-                        return (
-                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px', fontWeight: 'bold' }}>#{idx + 1}</td>
-                            <td style={{ padding: '8px' }}>Lv.{h.level}</td>
-                            <td style={{ padding: '8px' }}>{Number(h.exp_val || 0).toLocaleString()}</td>
-                            <td style={{ padding: '8px' }}>
-                              {h.photo_url ? (
-                                <a href={h.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>查看截圖</a>
-                              ) : '無'}
-                            </td>
-                            <td style={{ padding: '8px', color: '#64748b' }}>{timeStr}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )}
           </div>
