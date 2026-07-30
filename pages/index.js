@@ -1,3 +1,4 @@
+這個是不是你前面給我 偵測部分都是正確的 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { createClient } from '@supabase/supabase-js';
@@ -7,33 +8,19 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)[cite: 1]
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 根據精準規則自動生成 1~200 級經驗值對照表（120等基準 + 1.05倍）[cite: 1]
-function getExpRequiredForLevel(lv) {
-  if (lv <= 0) return 0;
-  if (lv === 120) return 29715818;
-  if (lv > 120) {
-    let exp = 29715818;
-    for (let i = 121; i <= lv; i++) {
-      exp = Math.floor(exp * 1.05);
-    }
-    return exp;
-  }
-  if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
-  if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
-  if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
-  if (lv <= 119) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  return 15;
-}
+// 🍁【請在這裡保持妳手邊真實的等級經驗值資料！】
+const REAL_EXP_TABLE = [
+  0,       // 0級
+  15,      // 1級 -> 2級
+  34,      // 2級 -> 3級
+  57,      // 3級 -> 4級
+  // ⬇️ 拜託把妳手邊真實的 1~200 級經驗值資料完整貼在這邊！
+];
 
-const REAL_EXP_TABLE = [];
-for (let i = 0; i <= 200; i++) {
-  REAL_EXP_TABLE[i] = getExpRequiredForLevel(i);
-}
-
-// 🌟 精準跨等成長計算邏輯[cite: 1]
+// 🌟 精準跨等成長計算邏輯
 function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
   if (currLv === baseLv) {
     return currExp - baseExp;
@@ -55,7 +42,7 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 完整正式獎勵標籤[cite: 1]
+// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -98,7 +85,6 @@ export default function Home() {
       setLoggedInUser(savedUser);
       setIsLoggedIn(true);
       fetchUserHistory(savedUser);
-      fetchLeaderboard();
     }
 
     const timer = setInterval(() => {
@@ -240,35 +226,11 @@ export default function Home() {
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！');
+      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
     }
   }
 
-  // 📸 Canvas 圖片放大預處理（保持像素銳利）[cite: 1]
-  async function preprocessAndScaleImage(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const scale = 2; 
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-          const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = false;
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-          canvas.toBlob((blob) => {
-            resolve(URL.createObjectURL(blob));
-          }, 'image/png');
-        };
-      };
-    });
-  }
-
+  // 📸 超級容錯辨識：自動消除文字空格與斷行
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -278,7 +240,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在進行繁體中文防作弊與數據解析...');
+    setMsg('⚡ 正在全圖高清讀取截圖與辨識角色身份...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -288,88 +250,91 @@ export default function Home() {
     const DD = String(D).padStart(2, '0');
 
     try {
-      const processedImageUrl = await preprocessAndScaleImage(selectedFile);
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const imageDataUrl = event.target.result;
 
-      if (window.Tesseract) {
-        // 🔐 啟用雙語辨識 (chi_tra + eng) 確保抓取中文名字與數字[cite: 1]
-        const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
-        const rawText = result.data.text || '';
-        const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
-        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
+        if (window.Tesseract) {
+          const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
+          const rawText = result.data.text || '';
 
-        console.log("OCR 辨識原始文字：", rawText);
+          // 🧹 徹底清除所有空白與換行，把字串全部連在一起轉小寫，解決 OCR 拆字問題
+          const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
+          const cleanUser = loggedInUser.replace(/\s+/g, '').toLowerCase();
 
-        // --- 1. 🎯 角色名稱防作弊比對[cite: 1] ---
-        if (loggedInUser) {
-          if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
-            setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
+          // --- 1. 🎯 角色名稱寬鬆比對 ---
+          if (loggedInUser) {
+            if (flattenedText.includes(cleanUser)) {
+              setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
+            } else {
+              setCharNotice(`⚠️ 警告：截圖內找不到目前登入的角色名稱【${loggedInUser}】！請確認是否上傳到別人的截圖。`);
+            }
+          }
+
+          // --- 2. 🎯 等級 (LV) 智慧抓取 ---
+          let detectedLv = '';
+          const lvRegex = /(?:lv|l\/|ln)[\s\.:]*(\d{1,3})/i;
+          const matchLv = rawText.match(lvRegex);
+          if (matchLv && matchLv[1]) {
+            detectedLv = matchLv[1];
           } else {
-            setCharNotice(`⚠️ 提醒：截圖中未直接讀取到【${loggedInUser}】，將交由後台審核。`);
+            // 如果沒抓到關鍵字，在扁平化文字裡找 Lv 後面的數字
+            const flatLvMatch = flattenedText.match(/(?:lv|l\/|ln)(\d{1,3})/);
+            if (flatLvMatch && flatLvMatch[1]) {
+              detectedLv = flatLvMatch[1];
+            } else {
+              // 備用方案：抓畫面上合理的 1~200 數字
+              const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+              if (nums && nums.length > 0) detectedLv = nums[0];
+            }
           }
-        }
+          if (detectedLv) setLevel(detectedLv);
 
-        // --- 2. 🎯 等級 (Lv) 抓取[cite: 1] ---
-        let detectedLv = '';
-        const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
-
-        if (lvMatch && lvMatch[1]) {
-          const val = Number(lvMatch[1]);
-          if (val >= 1 && val <= 200) {
-            detectedLv = String(val);
+          // --- 3. 🎯 經驗值 (EXP) 強制帶入 ---
+          let detectedExp = '';
+          const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i);
+          if (expMatch && expMatch[1]) {
+            detectedExp = expMatch[1].replace(/[,.]/g, '');
+          } else {
+            const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
+            if (allLongNums && allLongNums.length > 0) {
+              allLongNums.sort((a, b) => b.length - a.length);
+              detectedExp = allLongNums[0];
+            }
           }
-        }
+          if (detectedExp) setExpVal(detectedExp);
 
-        if (!detectedLv) {
-          const allNums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-          if (allNums && allNums.length > 0) {
-            const validLvs = allNums.map(Number).filter(n => n >= 50 && n <= 200);
-            detectedLv = validLvs.length > 0 ? String(validLvs[0]) : allNums[0];
+          // --- 4. 🎯 寬鬆日期判斷 ---
+          const dateTargets = [
+            `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
+            `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
+            `${MM}${DD}`, `${YYYY}${MM}${DD}`
+          ];
+
+          let hasDate = false;
+          for (let str of dateTargets) {
+            if (rawText.includes(str) || flattenedText.includes(str.replace(/\s+/g, '').toLowerCase())) {
+              hasDate = true;
+              break;
+            }
           }
-        }
-        if (detectedLv) setLevel(detectedLv);
 
-        // --- 3. 🎯 經驗值 (EXP) 抓取[cite: 1] ---
-        let detectedExp = '';
-        const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || cleanRaw.match(/exp\[?(\d{5,12})/i);
-        if (expMatch && expMatch[1]) {
-          detectedExp = expMatch[1].replace(/[,.]/g, '');
+          if (hasDate) {
+            setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
+          } else {
+            setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
+          }
+
+          setMsg('🎉 分析完成！已自動填入 LV 與 EXP，請確認角色名稱與數字無誤後即可提交。');
         } else {
-          const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
-          if (allLongNums && allLongNums.length > 0) {
-            allLongNums.sort((a, b) => b.length - a.length);
-            detectedExp = allLongNums[0];
-          }
+          setMsg('請檢查並確認等級與經驗值。');
         }
-        if (detectedExp) setExpVal(detectedExp);
+        setScanning(false);
+      };
 
-        // --- 4. 🎯 日期核對[cite: 1] ---
-        const dateTargets = [
-          `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
-          `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
-          `${MM}${DD}`, `${YYYY}${MM}${DD}`, `${YYYY}/${M}/${D}`, `${YYYY}/${MM}/${DD}`
-        ];
-
-        let hasDate = false;
-        for (let str of dateTargets) {
-          if (rawText.includes(str) || cleanRaw.includes(str.replace(/\s+/g, '').toLowerCase())) {
-            hasDate = true;
-            break;
-          }
-        }
-
-        if (hasDate) {
-          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
-        } else {
-          setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
-        }
-
-        setMsg('🎉 掃描完成！請確認自動代入的數值，若有誤差可直接手動修正。');
-      } else {
-        setMsg('請手動填寫等級與經驗值。');
-      }
-      setScanning(false);
+      reader.readAsDataURL(selectedFile);
     } catch (err) {
-      setMsg('💡 照片處理發生錯誤，請手動填寫數字。');
+      setMsg('💡 照片已選擇，請確認輸入框內的數字。');
       setScanning(false);
     }
   }
@@ -460,16 +425,16 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將進行繁體中文防作弊與數據解析！
+              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並核對角色名稱！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行繁體中文與數據解析...</p>}
-
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全圖高清讀取與核對角色名稱中...</p>}
+            
             {charNotice && (
-              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fef2f2', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fecdd3'), color: charNotice.includes('✅') ? '#15803d' : '#991b1b', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
@@ -498,13 +463,13 @@ export default function Home() {
             </button>
           </form>
 
-          {/* 📈 角色經驗值走勢圖與歷史明細表格 */}
+          {/* 📈 角色經驗值走勢圖 */}
           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢與歷史紀錄</h3>
+            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢</h3>
             {history.length < 2 ? (
-              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '15px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
+              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
             ) : (
-              <div style={{ width: '100%', overflowX: 'auto', marginBottom: '20px' }}>
+              <div style={{ width: '100%', overflowX: 'auto' }}>
                 <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
                   {(() => {
                     const maxExp = Math.max(...history.map(h => h.total_exp || 0));
@@ -536,44 +501,6 @@ export default function Home() {
                     );
                   })()}
                 </svg>
-              </div>
-            )}
-
-            {/* 📋 個人歷史提交紀錄表格 */}
-            {history.length > 0 && (
-              <div>
-                <h4 style={{ margin: '15px 0 10px 0', color: '#334155', fontSize: '15px' }}>📜 個人歷次回報明細：</h4>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '8px' }}>次數</th>
-                        <th style={{ padding: '8px' }}>等級</th>
-                        <th style={{ padding: '8px' }}>經驗值 (EXP)</th>
-                        <th style={{ padding: '8px' }}>截圖證明</th>
-                        <th style={{ padding: '8px' }}>回報時間</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((h, idx) => {
-                        const timeStr = h.created_at ? new Date(h.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間';
-                        return (
-                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px', fontWeight: 'bold' }}>#{idx + 1}</td>
-                            <td style={{ padding: '8px' }}>Lv.{h.level}</td>
-                            <td style={{ padding: '8px' }}>{Number(h.exp_val || 0).toLocaleString()}</td>
-                            <td style={{ padding: '8px' }}>
-                              {h.photo_url ? (
-                                <a href={h.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>查看截圖</a>
-                              ) : '無'}
-                            </td>
-                            <td style={{ padding: '8px', color: '#64748b' }}>{timeStr}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )}
           </div>
