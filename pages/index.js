@@ -255,7 +255,6 @@ export default function Home() {
     });
   }
 
-  // 📸 【高強度自動辨識與強制綁定修復版】
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -264,7 +263,6 @@ export default function Home() {
     setMsg('🔍 正在強效解析截圖中的數值...');
 
     try {
-      // 確保 Tesseract 載入完成
       let attempts = 0;
       while (!window.Tesseract && attempts < 10) {
         await new Promise(r => setTimeout(r, 300));
@@ -281,23 +279,17 @@ export default function Home() {
       const result = await window.Tesseract.recognize(ocrImage, 'eng');
       const fullText = result.data.text || '';
       
-      console.log('OCR 原始文字：', fullText);
-
-      // 抓出所有獨立數字
       const allNums = fullText.replace(/[,.]/g, ' ').match(/\b\d+\b/g) || [];
-      console.log('抓到的數字陣列：', allNums);
 
       let foundLv = '';
       let foundExp = '';
 
-      // 1. 等級篩選：放寬條件，抓取 10 到 200 之間的數字（避免有些截圖辨識不全）
       const validLvs = allNums.map(Number).filter(n => n >= 10 && n <= 200);
       if (validLvs.length > 0) {
         foundLv = String(validLvs[0]);
         setLevel(foundLv);
       }
 
-      // 2. 經驗值篩選：抓取所有 7 位數以上的長數字作為候選
       const expCandidates = allNums.filter(numStr => numStr.length >= 7 && numStr.length <= 11);
       if (expCandidates.length > 0) {
         foundExp = expCandidates[0];
@@ -310,7 +302,6 @@ export default function Home() {
         setMsg('💡 未能自動辨識出數字，請手動輸入等級與經驗值。');
       }
     } catch (err) {
-      console.error('OCR 錯誤:', err);
       setMsg('💡 圖片已選擇，請手動輸入等級與經驗值。');
     } finally {
       setScanning(false);
@@ -404,7 +395,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統會自動填入，若有誤差請直接手動修改！
+              💡 <strong>操作說明：</strong>系統會自動解析並填入數值。若有誤差可直接手動修改！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
