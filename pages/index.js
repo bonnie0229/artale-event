@@ -93,7 +93,9 @@ export default function Home() {
 
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${charId}_${Date.now()}.${fileExt}`;
+      // 💡 關鍵修復：檔名改用純英文數字，避免中文名字導致 Invalid key 錯誤
+      const fileName = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`;
+      
       const { error: uploadError } = await supabase.storage
         .from('screenshots')
         .upload(fileName, file);
