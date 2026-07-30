@@ -254,13 +254,13 @@ export default function Home() {
     });
   }
 
-  // 📸 【精準鎖定 LV 與 EXP 關鍵字的 OCR 辨識】
+  // 📸 【安全防呆辨識】若辨識不出或數值異常則不強制覆蓋，並提示手動確認
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setMsg('🔍 正在精準解析截圖中的 Lv 與 EXP...');
+    setMsg('🔍 正在掃描截圖...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -269,53 +269,21 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const fullText = result.data.text;
         
-        // 將全部文字轉為小寫並去除多餘空白，便於比對
-        const cleanText = fullText.toLowerCase().replace(/\s+/g, ' ');
-
-        let foundLv = '';
-        let foundExp = '';
-
-        // 1. 精準抓取 Lv 區塊（尋找類似 lv. 173 或 lv 173 或 173 附近）
-        // 在圖二中左下角為 "LV. 173"
-        const lvMatch = cleanText.match(/(?:lv|l\.|iv)[\s\.:]*(\d{1,3})/i);
-        if (lvMatch && lvMatch[1]) {
-          const val = Number(lvMatch[1]);
-          if (val >= 1 && val <= 200) {
-            foundLv = String(val);
-          }
+        const allNums = fullText.replace(/[,.]/g, ' ').match(/\b\d+\b/g) || [];
+        
+        // 嚴格篩選高等玩家等級（例如 100~200 等，避免抓到 30 或 40 等低級干擾）
+        const validLvs = allNums.map(Number).filter(n => n >= 100 && n <= 200);
+        if (validLvs.length > 0) {
+          setLevel(String(validLvs[0]));
         }
 
-        // 如果第一種沒抓到，改從所有 30~200 的數字中挑選最合理的等級
-        if (!foundLv) {
-          const allNums = cleanText.match(/\b\d+\b/g) || [];
-          const validLvs = allNums.map(Number).filter(n => n >= 30 && n <= 200);
-          if (validLvs.length > 0) {
-            foundLv = String(validLvs[0]); // 通常等級在畫面左下角，取第一個符合的
-          }
+        // 經驗值抓取 8~9 位數
+        const expCandidates = allNums.filter(numStr => numStr.length === 8 || numStr.length === 9);
+        if (expCandidates.length > 0) {
+          setExpVal(expCandidates[0]);
         }
 
-        if (foundLv) setLevel(foundLv);
-
-        // 2. 精準抓取 EXP 區塊（尋找 exp. 246011374 或直接抓取 8~9 位數的經驗值零頭）
-        // 圖二中 EXP 區塊為 "EXP. 246011374"
-        const expMatch = cleanText.match(/(?:exp)[\s\.:]*(\d{7,10})/i);
-        if (expMatch && expMatch[1]) {
-          foundExp = expMatch[1];
-        } else {
-          // 備用方案：直接過濾出 8 到 9 位數的長數字（避開 MP 的 21840，因為通常經驗值零頭在高等是 8-9 位數如 246011374）
-          const allNums = fullText.replace(/[,.]/g, '').match(/\b\d{8,9}\b/g);
-          if (allNums && allNums.length > 0) {
-            foundExp = allNums[0];
-          }
-        }
-
-        if (foundExp) setExpVal(foundExp);
-
-        if (foundLv || foundExp) {
-          setMsg('✨ 精準辨識成功！數值已自動填入，請核對是否正確。');
-        } else {
-          setMsg('💡 未能完全辨識，請手動輸入等級與經驗值。');
-        }
+        setMsg('✨ 截圖已上傳！請確認下方填入的等級與經驗值是否正確，若有誤差請直接手動修改。');
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -411,32 +379,32 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>系統會自動解析並填入數值。若有誤差可直接手動修改！
+              💡 <strong>操作說明：</strong>上傳截圖後，系統會嘗試輔助填入數值。<strong>請務必親自核對下方等級與經驗值是否正確，若有誤差可直接手動修改！</strong>
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在精準解析截圖中的 Lv 與 EXP...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在掃描截圖...</p>}
 
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv) <span style={{color: 'red', fontSize: '12px'}}>*請務必核對是否正確</span>：</label>
             <input 
               type="number" 
               placeholder="例如：173" 
               disabled={isEnded} 
               value={level} 
               onChange={e => setLevel(e.target.value)} 
-              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '2px solid #2563eb', boxSizing: 'border-box', background: '#fff' }} 
             />
 
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP) <span style={{color: 'red', fontSize: '12px'}}>*請務必核對是否正確</span>：</label>
             <input 
               type="number" 
               placeholder="例如：246011374" 
               disabled={isEnded}
               value={expVal} 
               onChange={e => setExpVal(e.target.value)} 
-              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '2px solid #2563eb', boxSizing: 'border-box', background: '#fff' }} 
             />
 
             <button type="submit" disabled={loading || isEnded} style={{ padding: '12px 24px', background: isEnded ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: isEnded ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
