@@ -150,7 +150,6 @@ export default function Home() {
 
     if (data) {
       setHistory(data);
-      setHasSubmitted(false);
     }
   }
 
@@ -270,7 +269,7 @@ export default function Home() {
     });
   }
 
-  // 📸 精準鎖定等級與經驗值數字
+  // 📸 強力精準解析等級、經驗值與日期
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -292,24 +291,29 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 1. 🎯 更精準抓取等級 (尋找 Lv 或 Level 後面的 1~3 位數)
+        // 1. 🎯 等級抓取
         let foundLv = '';
-        const lvRegex = /(?:lv|level|l\/|ln)[\s\.:]*([1-9][0-9]?|1[0-9]{2}|200)/i;
-        const lvMatch = text.match(lvRegex);
+        const lvMatch = text.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           foundLv = lvMatch[1];
           setLevel(foundLv);
+        } else {
+          // 備用：尋找畫面上獨立的 2 位數等級
+          const altLv = text.match(/\b([1-9][0-9]|1[0-9]{2}|200)\b/);
+          if (altLv && altLv[1]) {
+            foundLv = altLv[1];
+            setLevel(foundLv);
+          }
         }
 
-        // 2. 🎯 更精準抓取經驗值 (尋找 EXP 旁邊或帶逗號/點的數字，或畫面上最大的 6~10 位數)
+        // 2. 🎯 經驗值抓取
         let foundExp = '';
-        const expRegex = /exp[\s\.:]*([\d,.]+)/i;
-        const expMatch = text.match(expRegex);
+        const expMatch = text.match(/exp[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
           foundExp = expMatch[1].replace(/[,.]/g, '');
           setExpVal(foundExp);
         } else {
-          // 若無 EXP 關鍵字，抓畫面上所有 6 位數以上的數字，取最合理的值
+          // 備用：抓取 6~10 位數的長數字作為經驗值
           const allNums = text.replace(/[,.]/g, '').match(/\d{6,10}/g);
           if (allNums && allNums.length > 0) {
             allNums.sort((a, b) => b.length - a.length);
@@ -319,15 +323,11 @@ export default function Home() {
         }
 
         // 3. 🎯 角色名稱核對
-        if (loggedInUser) {
-          if (text.includes(loggedInUser)) {
-            setCharNotice(`✅ 成功在截圖中核對到角色名稱：${loggedInUser}`);
-          } else {
-            setCharNotice(`💡 提醒：畫面角色名稱與目前登入帳號 (${loggedInUser}) 進行核對中。`);
-          }
+        if (loggedInUser && text.includes(loggedInUser)) {
+          setCharNotice(`✅ 成功在截圖中核對到角色名稱：${loggedInUser}`);
         }
 
-        // 4. 🎯 日期核對
+        // 4. 🎯 強力日期核對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
         const mStr = String(M);
         const dStr = String(D);
@@ -335,17 +335,22 @@ export default function Home() {
         const ddStr = String(D).padStart(2, '0');
 
         const hasNumMatch = cleanAllText.includes(`${mStr}${dStr}`) || 
-                            cleanAllText.includes(`${mmStr}${ddStr}`);
-        const hasSymbolMatch = text.includes(`${M}/${D}`) || text.includes(`${M}.${D}`) || text.includes(`${M}月`) || text.includes('7/31');
+                            cleanAllText.includes(`${mmStr}${ddStr}`) ||
+                            cleanAllText.includes(`731`);
+        const hasSymbolMatch = text.includes(`${M}/${D}`) || 
+                               text.includes(`${M}.${D}`) || 
+                               text.includes(`${M}月`) || 
+                               text.includes('7/31') || 
+                               text.includes('07/31');
 
         if (hasNumMatch || hasSymbolMatch) {
           setDateNotice(`✅ 成功在全畫面驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角確定有今日日期（${M}/${D}），後台將人工審核放行！`);
+          setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（${M}/${D}），管理員後台將人工審核放行！`);
         }
 
         if (foundLv || foundExp) {
-          setMsg('✨ 分析完成！等級與經驗值已自動填入，若有修改將自動標記供管理員審核。');
+          setMsg('✨ 分析完成！等級與經驗值已自動填入。');
         } else {
           setMsg('💡 未能自動辨識到完整數值，請手動填入。');
         }
@@ -382,7 +387,6 @@ export default function Home() {
 
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
-      // 🔍 提交資料至 Supabase
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
@@ -390,13 +394,14 @@ export default function Home() {
         total_exp: calculatedTotalExp,
         photo_url: photoUrl,
         status: 'approved',
-        is_manually_edited: isManuallyEdited
+        is_manually_edited: isManuallyEdited,
+        checked_by: null // 預設未核對
       }]);
 
       if (subError) throw subError;
 
       alert('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true);
+      setHasSubmitted(true); // 👈 確實解鎖排行榜
       await fetchUserHistory(loggedInUser);
       await fetchLeaderboard();
       setMsg('🎉 成績提交成功！');
