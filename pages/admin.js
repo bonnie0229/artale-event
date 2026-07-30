@@ -40,18 +40,20 @@ function calculateGrowthExp(baseline, latest) {
 
 export default function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminUser, setAdminUser] = useState('');
   const [password, setPassword] = useState('');
   const [playerSubmissions, setPlayerSubmissions] = useState([]);
   const [msg, setMsg] = useState('');
 
+  // 🎯 帳號隨便打，密碼輸入 0 即可登入
   function handleAdminLogin(e) {
     e.preventDefault();
-    if (password === 'admin888') { // 可自行更改密碼
+    if (password === '0') {
       setIsAdmin(true);
       setMsg('✅ 管理員登入成功！');
       fetchAllSubmissions();
     } else {
-      setMsg('❌ 管理員密碼錯誤！');
+      setMsg('❌ 密碼錯誤！(請輸入 0)');
     }
   }
 
@@ -111,13 +113,20 @@ export default function AdminDashboard() {
 
       {!isAdmin ? (
         <form onSubmit={handleAdminLogin} style={{ background: '#f8fafc', padding: '30px', borderRadius: '12px', border: '1px solid #e2e8f0', maxWidth: '400px', margin: '40px auto' }}>
-          <h3>🔐 請輸入管理員密碼</h3>
+          <h3>🔐 管理員登入</h3>
+          <input 
+            type="text" 
+            placeholder="管理員名稱 (隨便輸入)" 
+            value={adminUser} 
+            onChange={e => setAdminUser(e.target.value)} 
+            style={{ display: 'block', margin: '15px 0 10px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+          />
           <input 
             type="password" 
-            placeholder="管理員密碼" 
+            placeholder="密碼 (請輸入 0)" 
             value={password} 
-            onChange={e => setPassword(e.target.value) } 
-            style={{ display: 'block', margin: '15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+            onChange={e => setPassword(e.target.value)} 
+            style={{ display: 'block', margin: '0 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
           />
           <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}>登入後台</button>
         </form>
