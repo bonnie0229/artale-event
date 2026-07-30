@@ -32,11 +32,9 @@ export default function Home() {
     }
   }, [isLoggedIn, charId]);
 
-  // 取得台灣時間今天的 M/D (例如: 7/30)
   function getTodayTaiwanStr() {
     const now = new Date();
-    const twDateStr = now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' });
-    return twDateStr; // 例如 "7/30"
+    return now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' });
   }
 
   async function fetchLeaderboard() {
@@ -114,37 +112,78 @@ export default function Home() {
     }
   }
 
-  // 📸 自動辨識圖片內容 + 驗證今日日期 (台灣時間)
+  // 🚀 圖片壓縮工具（將大圖壓縮加速辨識）
+  function compressImageForOCR(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const maxDim = 800; // 壓縮至 800px 以內
+          let width = img.width;
+          let height = img.height;
+          if (width > height && width > maxDim) {
+            height *= maxDim / width;
+            width = maxDim;
+          } else if (height > maxDim) {
+            width *= maxDim / height;
+            height = maxDim;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 📸 極速辨識圖片邏輯（附帶 6 秒超時）
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
     setDateErr('');
-    setMsg('🔍 正在掃描截圖中的日期、等級與經驗值...');
+    setMsg('⚡ 快速辨識中...');
 
-    const todayStr = getTodayTaiwanStr(); // 取得今天台灣日期 (例如 "7/30")
+    const todayStr = getTodayTaiwanStr();
     const [month, day] = todayStr.split('/');
 
     try {
-      if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(selectedFile, 'eng');
+      // 1. 先將大圖壓縮以大幅提高辨識速度
+      const compressedBase64 = await compressImageForOCR(selectedFile);
+
+      // 2. 設置 6 秒超時機制
+      const ocrTask = async () => {
+        if (!window.Tesseract) return null;
+        return await window.Tesseract.recognize(compressedBase64, 'eng');
+      };
+
+      const timeoutTask = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT')), 6000)
+      );
+
+      // 競速：看是 OCR 先完成還是 6 秒超時
+      const result = await Promise.race([ocrTask(), timeoutTask]);
+
+      if (result && result.data) {
         const text = result.data.text;
 
-        // 1. 日期比對邏輯 (搜尋 7/30, 07/30, 7月30日, 2026/7/30 等多種格式)
+        // 日期比對
         const monthPattern = month.padStart(2, '0') + '|' + month;
         const dayPattern = day.padStart(2, '0') + '|' + day;
         const dateRegex = new RegExp(`(${monthPattern})[/\\-.月](${dayPattern})`, 'i');
 
-        const hasTodayDate = dateRegex.test(text);
-
-        if (!hasTodayDate) {
-          setDateErr(`⚠️ 日期錯誤！截圖內未找到今日台灣日期（${todayStr}），請確認是否上傳今日最新截圖。`);
-        } else {
-          setDateErr('');
+        if (!dateRegex.test(text)) {
+          setDateErr(`⚠️ 日期警告：自動掃描未發現今日日期（${todayStr}），管理員審核時若非今日截圖將予以剔除。`);
         }
 
-        // 2. 抓取數字（等級與經驗值）
+        // 抓取數字
         const numbers = text.match(/\d+/g);
         if (numbers && numbers.length > 0) {
           const possibleLv = numbers.find(n => Number(n) >= 1 && Number(n) <= 300);
@@ -153,15 +192,17 @@ export default function Home() {
           if (possibleLv) setLevel(possibleLv);
           if (possibleExp) setExpVal(possibleExp);
 
-          setMsg('✨ 自動掃描完成！請檢查自動帶入的等級與經驗值，若有誤差請手動修改。');
+          setMsg('✨ 自動帶入完成！若數字有誤請手動微調。');
         } else {
-          setMsg('⚠️ 截圖已選擇，若未自動帶入資料，請手動填寫等級與經驗值。');
+          setMsg('圖片已選擇！請手動填寫等級與經驗值。');
         }
-      } else {
-        setMsg('截圖已選擇！請手動確認或輸入等級與經驗值。');
       }
     } catch (err) {
-      setMsg('照片已選擇，請手動填寫等級與經驗值。');
+      if (err.message === 'TIMEOUT') {
+        setMsg('⏱️ 自動辨識超時，請直接手動輸入等級與經驗值。');
+      } else {
+        setMsg('圖片已選擇，請手動填寫等級與經驗值。');
+      }
     } finally {
       setScanning(false);
     }
@@ -171,7 +212,6 @@ export default function Home() {
     e.preventDefault();
     if (!file) return setMsg('請選擇截圖照片');
     if (!level || !expVal) return setMsg('請填寫或確認等級與經驗值');
-    if (dateErr) return setMsg('無法提交：' + dateErr);
 
     setLoading(true);
     setMsg('照片與成績上傳中...');
@@ -238,19 +278,17 @@ export default function Home() {
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <h3>📸 回報等級與截圖 (目前登入：<span style={{ color: '#2563eb' }}>{charId}</span>)</h3>
             
-            {/* 引導說明文字 */}
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>請先選擇上傳今日遊戲截圖，系統會自動比對時間並帶入等級與經驗值。若辨識有誤或未帶出，請手動修改。
+              💡 <strong>操作說明：</strong>上傳今日截圖，系統會試著自動帶入數字。若辨識較慢或有誤，請直接手動輸入。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳今日證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⏳ 截圖與日期辨識中，請稍候...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在快速掃描圖片中...</p>}
             
-            {/* 🔴 日期錯誤提示 */}
             {dateErr && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecdd3', color: '#dc2626', padding: '10px', borderRadius: '6px', fontWeight: 'bold', margin: '10px 0' }}>
+              <div style={{ background: '#fffbebfb', border: '1px solid #fef08a', color: '#b45309', padding: '10px', borderRadius: '6px', fontSize: '14px', margin: '10px 0' }}>
                 {dateErr}
               </div>
             )}
@@ -261,7 +299,7 @@ export default function Home() {
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
             <input type="number" placeholder="例如：4523000" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
 
-            <button type="submit" disabled={loading || scanning} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
+            <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
               {loading ? '提交中...' : '確認並提交成績'}
             </button>
           </form>
