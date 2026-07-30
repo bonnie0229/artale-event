@@ -214,7 +214,7 @@ export default function Home() {
     });
   }
 
-  // 📸 自動辨識 LV / EXP / 全區日期標記
+  // 📸 自動辨識 LV / EXP / 升級版全區寬鬆日期標記
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -231,15 +231,14 @@ export default function Home() {
     const MM = String(M).padStart(2, '0');
     const DD = String(D).padStart(2, '0');
 
-    const mmddStr = `${MM}${DD}`;
-    const mddStr = `${M}${DD}`;
-
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
+        // 同時建立無空格扁平化字串，徹底解決 OCR 把字拆散的問題
+        const flattenedText = text.replace(/\s+/g, '').toLowerCase();
 
         // 1. 🎯 精準辨識等級 (LV.)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
@@ -253,21 +252,28 @@ export default function Home() {
           setExpVal(expMatch[1]);
         }
 
-        // 3. 🎯 全畫面日期檢驗
-        const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
-        const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
-        const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
-        const pattern4 = new RegExp(`(${mmddStr}|${mddStr})`, 'i');
+        // 3. 🎯 升級版全畫面寬鬆日期檢驗（支援 7/30、07/30、7.30、7月30、0730）
+        const dateTargets = [
+          `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
+          `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
+          `${MM}${DD}`, `${M}${DD}`
+        ];
 
-        const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text) || pattern4.test(text);
+        let hasDateMatch = false;
+        for (let str of dateTargets) {
+          if (text.includes(str) || flattenedText.includes(str.replace(/\s+/g, '').toLowerCase())) {
+            hasDateMatch = true;
+            break;
+          }
+        }
 
         if (hasDateMatch) {
           setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工核對。`);
+          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
         }
 
-        // 4. 🎯 角色綁定確認 (直接顯示綠色成功訊息，避免中文 OCR 誤判)
+        // 4. 🎯 角色綁定確認
         if (loggedInUser) {
           setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
