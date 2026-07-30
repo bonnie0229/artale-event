@@ -43,6 +43,7 @@ export default function Home() {
   const [charId, setCharId] = useState('');
   const [pin, setPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState('');
+  const [newCharIdInput, setNewCharIdInput] = useState(''); // 新增：改名輸入框
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -167,6 +168,49 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
+  // 🔄 玩家改名邏輯
+  async function handleRename(e) {
+    e.preventDefault();
+    const targetName = newCharIdInput.trim();
+    if (!targetName) return setMsg('請輸入新的角色名稱！');
+    if (targetName === loggedInUser) return setMsg('新名稱不能與舊名稱相同！');
+
+    // 檢查新名字是否已被註冊
+    const { data: existingUser } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('char_id', targetName)
+      .single();
+
+    if (existingUser) {
+      return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
+    }
+
+    // 1. 更新 participants 表
+    const { error: partErr } = await supabase
+      .from('participants')
+      .update({ char_id: targetName })
+      .eq('char_id', loggedInUser);
+
+    if (partErr) return setMsg('修改角色名稱失敗：' + partErr.message);
+
+    // 2. 批量轉移 submissions 表中的歷史成績
+    await supabase
+      .from('submissions')
+      .update({ char_id: targetName })
+      .eq('char_id', loggedInUser);
+
+    // 3. 更新本地狀態
+    const oldName = loggedInUser;
+    setLoggedInUser(targetName);
+    localStorage.setItem('artale_user', targetName);
+    setNewCharIdInput('');
+    setMsg(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
+    
+    fetchUserHistory(targetName);
+    fetchLeaderboard();
+  }
+
   async function handleUpdatePin(e) {
     e.preventDefault();
     if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
@@ -214,7 +258,6 @@ export default function Home() {
     });
   }
 
-  // 📸 自動辨識 LV / EXP / 全區日期標記
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -241,19 +284,16 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 🎯 精準辨識等級 (LV.)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
         }
 
-        // 2. 🎯 精準辨識經驗值 (EXP.)
         const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
         if (expMatch && expMatch[1]) {
           setExpVal(expMatch[1]);
         }
 
-        // 3. 🎯 全畫面日期檢驗
         const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
         const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
         const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
@@ -267,7 +307,6 @@ export default function Home() {
           setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工核對。`);
         }
 
-        // 4. 🎯 角色綁定確認 (直接顯示綠色成功訊息，避免中文 OCR 誤判)
         if (loggedInUser) {
           setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
@@ -441,14 +480,28 @@ export default function Home() {
             )}
           </div>
 
-          {/* 修改 PIN 碼表單 */}
-          <form onSubmit={handleUpdatePin} style={{ background: '#fff1f2', padding: '15px 20px', borderRadius: '12px', border: '1px solid #fecdd3', marginBottom: '30px' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#9f1239' }}>⚙️ 修改個人的 4 位數 PIN 碼</h4>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #fda4af' }} />
-              <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
-            </div>
-          </form>
+          {/* ⚙️ 個人設定區（改名與修改密碼） */}
+          <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
+            <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
+            
+            {/* 1. 角色改名功能 */}
+            <form onSubmit={handleRename} style={{ marginBottom: '15px' }}>
+              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔄 角色遊戲內改名 / 轉移數據：</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input type="text" placeholder="輸入遊戲內的新角色 ID" value={newCharIdInput} onChange={e => setNewCharIdInput(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>確認改名</button>
+              </div>
+            </form>
+
+            {/* 2. 修改 PIN 碼 */}
+            <form onSubmit={handleUpdatePin}>
+              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔑 修改個人 4 位數 PIN 碼：</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
