@@ -9,7 +9,6 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 Artale 1~200 級「每一級升等所需」的經驗值對照表（120等後每升一等為上一等級的 1.05 倍）
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -20,7 +19,6 @@ function getExpRequiredForLevel(lv) {
   return 2000000000;
 }
 
-// 🎯 核心成長計算邏輯：以玩家的第一筆（7/30 起始基準）為起點，精準計算跨等與未記錄經驗
 function calculateGrowthExp(baseline, latest) {
   if (!baseline || !latest) return 0;
   const baseLv = Number(baseline.level);
@@ -28,34 +26,25 @@ function calculateGrowthExp(baseline, latest) {
   const currLv = Number(latest.level);
   const currExp = Number(latest.exp_val) || 0;
 
-  // 如果等級完全相同，直接相減經驗值零頭
   if (currLv === baseLv) {
     return Math.max(0, currExp - baseExp);
   }
-
-  // 如果等級下降或異常，防呆回傳 0
   if (currLv < baseLv) {
     return 0;
   }
 
   let totalGrowth = 0;
-
-  // 1. 基準那一級剩餘未練完的經驗值
   const baseLevelReq = getExpRequiredForLevel(baseLv);
   totalGrowth += Math.max(0, baseLevelReq - baseExp);
 
-  // 2. 中間跨過去的完整等級經驗值總和（最高到 200 等）
   for (let l = baseLv + 1; l < currLv && l <= 200; l++) {
     totalGrowth += getExpRequiredForLevel(l);
   }
 
-  // 3. 最新那一級目前已練到的經驗值零頭
   totalGrowth += currExp;
-
   return totalGrowth;
 }
 
-// 🎁 活動獎勵名次對應標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -117,7 +106,6 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  // 🏆 抓取排行榜：嚴格按時間排序，確保每個玩家的第一筆資料為基準點
   async function fetchLeaderboard() {
     if (!supabase) return;
     const { data } = await supabase.from('submissions').select('*').order('id', { ascending: true });
@@ -132,11 +120,9 @@ export default function Home() {
 
       const list = Object.keys(userGroup).map(id => {
         const subs = userGroup[id];
-        subs.sort((a, b) => a.id - b.id); // 確保第一筆絕對是該玩家的最舊資料
-        
-        const baseline = subs[0]; // 7/30 第一筆基準資料
-        const latest = subs[subs.length - 1]; // 當前最新資料
-
+        subs.sort((a, b) => a.id - b.id);
+        const baseline = subs[0];
+        const latest = subs[subs.length - 1];
         const expGrowth = calculateGrowthExp(baseline, latest);
 
         return {
@@ -246,7 +232,7 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1800;
+          const maxDim = 2000;
           let width = img.width;
           let height = img.height;
           if (width > height && width > maxDim) {
@@ -260,7 +246,7 @@ export default function Home() {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.92));
+          resolve(canvas.toDataURL('image/jpeg', 0.95));
         };
         img.src = e.target.result;
       };
@@ -268,66 +254,67 @@ export default function Home() {
     });
   }
 
-  // 📸 【已驗證正確的偵測邏輯】高精度自動辨識與匯入
+  // 📸 【精準鎖定 LV 與 EXP 關鍵字的 OCR 辨識】
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setMsg('🔍 正在自動解析截圖中的等級與經驗值...');
+    setMsg('🔍 正在精準解析截圖中的 Lv 與 EXP...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
-        const text = result.data.text;
+        const fullText = result.data.text;
         
+        // 將全部文字轉為小寫並去除多餘空白，便於比對
+        const cleanText = fullText.toLowerCase().replace(/\s+/g, ' ');
+
         let foundLv = '';
-        const lines = text.split('\n');
-        
-        // 1. 🎯 優先尋找明確包含 Lv / Level 關鍵字的行
-        for (let line of lines) {
-          const match = line.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
-          if (match && match[1]) {
-            const val = Number(match[1]);
-            if (val >= 1 && val <= 200) {
-              foundLv = String(val);
-              break;
-            }
+        let foundExp = '';
+
+        // 1. 精準抓取 Lv 區塊（尋找類似 lv. 173 或 lv 173 或 173 附近）
+        // 在圖二中左下角為 "LV. 173"
+        const lvMatch = cleanText.match(/(?:lv|l\.|iv)[\s\.:]*(\d{1,3})/i);
+        if (lvMatch && lvMatch[1]) {
+          const val = Number(lvMatch[1]);
+          if (val >= 1 && val <= 200) {
+            foundLv = String(val);
           }
         }
-        
+
+        // 如果第一種沒抓到，改從所有 30~200 的數字中挑選最合理的等級
         if (!foundLv) {
-          const allPotentialLvs = text.match(/\b([1-9][0-9]|1[0-9]{2}|200)\b/g);
-          if (allPotentialLvs) {
-            const valid = allPotentialLvs.map(Number).filter(n => n >= 30 && n <= 200);
-            if (valid.length > 0) {
-              foundLv = String(valid[valid.length - 1]);
-            }
+          const allNums = cleanText.match(/\b\d+\b/g) || [];
+          const validLvs = allNums.map(Number).filter(n => n >= 30 && n <= 200);
+          if (validLvs.length > 0) {
+            foundLv = String(validLvs[0]); // 通常等級在畫面左下角，取第一個符合的
           }
         }
+
         if (foundLv) setLevel(foundLv);
 
-        // 2. 🎯 經驗值辨識：優先尋找包含 EXP 關鍵字的數值
-        let foundExp = '';
-        const expMatch = text.match(/exp[\s\.:]*([\d,.]+)/i);
+        // 2. 精準抓取 EXP 區塊（尋找 exp. 246011374 或直接抓取 8~9 位數的經驗值零頭）
+        // 圖二中 EXP 區塊為 "EXP. 246011374"
+        const expMatch = cleanText.match(/(?:exp)[\s\.:]*(\d{7,10})/i);
         if (expMatch && expMatch[1]) {
-          foundExp = expMatch[1].replace(/[,.]/g, '');
-          setExpVal(foundExp);
+          foundExp = expMatch[1];
         } else {
-          const allNums = text.replace(/[,.]/g, '').match(/\d{7,10}/g);
+          // 備用方案：直接過濾出 8 到 9 位數的長數字（避開 MP 的 21840，因為通常經驗值零頭在高等是 8-9 位數如 246011374）
+          const allNums = fullText.replace(/[,.]/g, '').match(/\b\d{8,9}\b/g);
           if (allNums && allNums.length > 0) {
-            allNums.sort((a, b) => b.length - a.length);
             foundExp = allNums[0];
-            setExpVal(foundExp);
           }
         }
 
+        if (foundExp) setExpVal(foundExp);
+
         if (foundLv || foundExp) {
-          setMsg('✨ 自動辨識成功！數值已自動匯入，請核對是否正確。');
+          setMsg('✨ 精準辨識成功！數值已自動填入，請核對是否正確。');
         } else {
-          setMsg('💡 未能自動辨識，請手動輸入等級與經驗值。');
+          setMsg('💡 未能完全辨識，請手動輸入等級與經驗值。');
         }
       }
     } catch (err) {
@@ -424,13 +411,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>系統會自動辨識並填入數值。若您有手動修改數值，系統會自動標記；若直接使用自動匯入則不會標記。
+              💡 <strong>操作說明：</strong>系統會自動解析並填入數值。若有誤差可直接手動修改！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析截圖中的等級與經驗值...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在精準解析截圖中的 Lv 與 EXP...</p>}
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
             <input 
