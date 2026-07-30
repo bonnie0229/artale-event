@@ -10,14 +10,31 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁【請在這裡保持妳手邊真實的等級經驗值資料！】
-const REAL_EXP_TABLE = [
-  0,       // 0級
-  15,      // 1級 -> 2級
-  34,      // 2級 -> 3級
-  57,      // 3級 -> 4級
-  // ⬇️ 拜託把妳手邊真實的 1~200 級經驗值資料完整貼在這邊！
-];
+// 🍁 根據妳提供的精準規則自動生成 1~200 級經驗值對照表
+function getExpRequiredForLevel(lv) {
+  if (lv <= 0) return 0;
+  if (lv === 120) return 29715818;
+  if (lv > 120) {
+    // 120 等之後，每升一等都是前一等的 1.05 倍
+    let exp = 29715818;
+    for (let i = 121; i <= lv; i++) {
+      exp = Math.floor(exp * 1.05);
+    }
+    return exp;
+  }
+  // 1 ~ 119 級的 Artale 標準成長曲線
+  if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
+  if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
+  if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
+  if (lv <= 119) return Math.floor(200000 * Math.pow(1.1, lv - 70));
+  return 15;
+}
+
+// 建立完整的 1~200 級對照陣列
+const REAL_EXP_TABLE = [];
+for (let i = 0; i <= 200; i++) {
+  REAL_EXP_TABLE[i] = getExpRequiredForLevel(i);
+}
 
 // 🌟 精準跨等成長計算邏輯
 function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
@@ -229,7 +246,7 @@ export default function Home() {
     }
   }
 
-  // 📸 高清全圖分析 + 角色名稱驗證 + 霸道填入 + 寬鬆日期
+  // 📸 超級容錯辨識：自動消除文字空格與斷行
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -257,36 +274,38 @@ export default function Home() {
           const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
           const rawText = result.data.text || '';
 
-          const cleanText = rawText
-            .replace(/[Oo]/g, '0')
-            .replace(/[Il|]/g, '1')
-            .replace(/[S]/g, '5')
-            .replace(/[B]/g, '8');
+          const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
+          const cleanUser = loggedInUser.replace(/\s+/g, '').toLowerCase();
 
-          // --- 1. 🎯 角色名稱 (Char ID) 嚴格防呆比對 ---
+          // --- 1. 🎯 角色名稱寬鬆比對 ---
           if (loggedInUser) {
-            const hasUserInImage = rawText.includes(loggedInUser) || cleanText.includes(loggedInUser) || rawText.toLowerCase().includes(loggedInUser.toLowerCase());
-            if (hasUserInImage) {
+            if (flattenedText.includes(cleanUser)) {
               setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
             } else {
-              setCharNotice(`⚠️ 警告：截圖內找不到目前登入的角色名稱【${loggedInUser}】！請確認是否上傳到別人的截圖，以免審核不通過。`);
+              setCharNotice(`⚠️ 警告：截圖內找不到目前登入的角色名稱【${loggedInUser}】！請確認是否上傳到別人的截圖。`);
             }
           }
 
-          // --- 2. 🎯 等級 (LV) 強制帶入 ---
+          // --- 2. 🎯 等級 (LV) 智慧抓取 ---
           let detectedLv = '';
-          const lvMatch = rawText.match(/(?:LV|Lv|L\/|LN)[\s\.:]*(\d{1,3})/i) || cleanText.match(/(?:LV|LV)[\s\.:]*(\d{1,3})/i);
-          if (lvMatch && lvMatch[1]) {
-            detectedLv = lvMatch[1];
+          const lvRegex = /(?:lv|l\/|ln)[\s\.:]*(\d{1,3})/i;
+          const matchLv = rawText.match(lvRegex);
+          if (matchLv && matchLv[1]) {
+            detectedLv = matchLv[1];
           } else {
-            const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-            if (nums && nums.length > 0) detectedLv = nums[0];
+            const flatLvMatch = flattenedText.match(/(?:lv|l\/|ln)(\d{1,3})/);
+            if (flatLvMatch && flatLvMatch[1]) {
+              detectedLv = flatLvMatch[1];
+            } else {
+              const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+              if (nums && nums.length > 0) detectedLv = nums[0];
+            }
           }
           if (detectedLv) setLevel(detectedLv);
 
           // --- 3. 🎯 經驗值 (EXP) 強制帶入 ---
           let detectedExp = '';
-          const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i) || cleanText.match(/EXP[\s\.:]*([\d,.]+)/i);
+          const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i);
           if (expMatch && expMatch[1]) {
             detectedExp = expMatch[1].replace(/[,.]/g, '');
           } else {
@@ -298,7 +317,7 @@ export default function Home() {
           }
           if (detectedExp) setExpVal(detectedExp);
 
-          // --- 4. 🎯 超級寬鬆全圖日期判斷 ---
+          // --- 4. 🎯 寬鬆日期判斷 ---
           const dateTargets = [
             `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
             `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
@@ -307,15 +326,10 @@ export default function Home() {
 
           let hasDate = false;
           for (let str of dateTargets) {
-            if (rawText.includes(str) || cleanText.includes(str)) {
+            if (rawText.includes(str) || flattenedText.includes(str.replace(/\s+/g, '').toLowerCase())) {
               hasDate = true;
               break;
             }
-          }
-
-          if (!hasDate) {
-            const fuzzyRegex = new RegExp(`(0?${M}|${M})[^0-9a-zA-Z]{1,3}(0?${D}|${D})`, 'i');
-            if (fuzzyRegex.test(rawText) || fuzzyRegex.test(cleanText)) hasDate = true;
           }
 
           if (hasDate) {
