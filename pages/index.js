@@ -278,7 +278,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在進行防作弊與數據解析...');
+    setMsg('⚡ 正在進行截圖數據解析...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -291,7 +291,7 @@ export default function Home() {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
-        // 🔐 啟用雙語辨識 (chi_tra + eng) 確保抓取中文名字與數字[cite: 1]
+        // 🔐 啟用雙語辨識[cite: 1]
         const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
         const rawText = result.data.text || '';
         const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
@@ -299,31 +299,29 @@ export default function Home() {
 
         console.log("OCR 辨識原始文字：", rawText);
 
-        // --- 1. 🎯 角色名稱防作弊比對[cite: 1] ---
-        if (loggedInUser) {
-          if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
-            setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
-          } else {
-            setCharNotice(`⚠️ 提醒：截圖中未直接讀取到【${loggedInUser}】，將交由後台審核。`);
-          }
+        // --- 1. 🎯 角色名稱核對（不顯示冗員提示） ---
+        const normalizedRaw = rawText.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+        const normalizedUser = loggedInUser.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+        if (loggedInUser && (normalizedRaw.includes(normalizedUser) || rawText.includes(loggedInUser))) {
+          setCharNotice(`✅ 角色名稱核對成功`);
+        } else {
+          setCharNotice(`💡 系統將由後台進行審核確認`);
         }
 
-        // --- 2. 🎯 等級 (Lv) 抓取[cite: 1] ---
+        // --- 2. 🎯 等級 (Lv) 嚴格精準抓取 ---
         let detectedLv = '';
-        const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
-
-        if (lvMatch && lvMatch[1]) {
-          const val = Number(lvMatch[1]);
-          if (val >= 1 && val <= 200) {
-            detectedLv = String(val);
-          }
-        }
-
-        if (!detectedLv) {
-          const allNums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-          if (allNums && allNums.length > 0) {
-            const validLvs = allNums.map(Number).filter(n => n >= 50 && n <= 200);
-            detectedLv = validLvs.length > 0 ? String(validLvs[0]) : allNums[0];
+        const lvPatterns = [
+          /(?:lv|lvl|level)[\s.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i,
+          /l[\s.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i
+        ];
+        for (const pattern of lvPatterns) {
+          const match = rawText.match(pattern) || cleanRaw.match(pattern);
+          if (match && match[1]) {
+            const val = Number(match[1]);
+            if (val >= 1 && val <= 200) {
+              detectedLv = String(val);
+              break;
+            }
           }
         }
         if (detectedLv) setLevel(detectedLv);
@@ -360,7 +358,7 @@ export default function Home() {
         if (hasDate) {
           setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
+          setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），將交由後台審核。`);
         }
 
         setMsg('🎉 掃描完成！請確認自動代入的數值，若有誤差可直接手動修正。');
@@ -460,13 +458,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將進行防作弊中文角色檢測、等級與經驗值自動抓取！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取等級與經驗值！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行數據解析...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行截圖數據解析...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
