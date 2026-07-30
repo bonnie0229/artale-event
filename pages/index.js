@@ -269,7 +269,7 @@ export default function Home() {
     });
   }
 
-  // 📸 精準過濾等級 (1~200) 與經驗值 (防誤判 173 看成 74)
+  // 📸 高精度自動解析截圖，將等級與經驗值自動帶入格子中
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -278,7 +278,7 @@ export default function Home() {
     setDateNotice('');
     setCharNotice('');
     setIsManuallyEdited(false);
-    setMsg('🔍 正在強力解析 7/30 以後的截圖資料...');
+    setMsg('🔍 正在自動解析 7/30 以後的截圖資料...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -287,7 +287,7 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 1. 🎯 高精度等級抓取 (尋找 Lv 或 Level，並嚴格限制 1~200 之間，防止誤判)
+        // 1. 🎯 精準等級辨識 (防誤判 173 看成 74，嚴格鎖定 1~200 級區間)
         let foundLv = '';
         const lines = text.split('\n');
         for (let line of lines) {
@@ -301,18 +301,17 @@ export default function Home() {
           }
         }
         if (!foundLv) {
-          // 若無關鍵字，尋找畫面上獨立的 3 位數或合邏輯等級
           const allPotentialLvs = text.match(/\b([1-9][0-9]|1[0-9]{2}|200)\b/g);
           if (allPotentialLvs) {
             const valid = allPotentialLvs.map(Number).filter(n => n >= 30 && n <= 200);
             if (valid.length > 0) {
-              foundLv = String(valid[0]); // 通常等級數字較大或在合理區間
+              foundLv = String(valid[0]);
             }
           }
         }
         if (foundLv) setLevel(foundLv);
 
-        // 2. 🎯 高精度經驗值抓取 (尋找 EXP 旁邊或長度 6~10 位的數字)
+        // 2. 🎯 精準經驗值辨識
         let foundExp = '';
         const expMatch = text.match(/exp[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
@@ -332,7 +331,7 @@ export default function Home() {
           setCharNotice(`✅ 成功在截圖中核對到角色名稱：${loggedInUser}`);
         }
 
-        // 4. 🎯 7/30 以後日期強力核對
+        // 4. 🎯 7/30 以後日期核對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
         const hasDateMatch = cleanAllText.includes('730') || 
                              cleanAllText.includes('731') || 
@@ -349,13 +348,13 @@ export default function Home() {
         }
 
         if (foundLv || foundExp) {
-          setMsg('✨ 分析完成！等級與經驗值已自動填入，若有誤差可手動微調。');
+          setMsg('✨ 自動解析完成！等級與經驗值已自動填入，若有誤差可手動微調。');
         } else {
           setMsg('💡 未能自動辨識到完整數值，請手動填入。');
         }
       }
     } catch (err) {
-      setMsg('圖片已選擇, 請手動確認等級與經驗值。');
+      setMsg('圖片已選擇，請手動確認等級與經驗值。');
     } finally {
       setScanning(false);
     }
@@ -365,7 +364,7 @@ export default function Home() {
     e.preventDefault();
     if (isEnded) return setMsg('⏰ 活動已截止，無法再提交新成績！');
     if (!supabase) return setMsg('⚠️ Supabase 設定未完全');
-    if (!file) return setMsg('⚠️ 請選擇 7/30 以後的截圖照片');
+    if (!file) return setMsg('⚠️ 請上傳 7/30 以後的截圖照片');
     if (!level || !expVal) return setMsg('⚠️ 請填寫或確認等級與經驗值');
     if (!loggedInUser) return setMsg('⚠️ 登入狀態異常，請重新登入');
 
@@ -399,7 +398,6 @@ export default function Home() {
 
       if (subError) throw subError;
 
-      // 🎯 取消彈跳視窗，直接在頁面顯示成功並解鎖排行榜
       setMsg('🎉 7/30 起始成績提交成功！排行榜已為您自動展開。');
       setHasSubmitted(true);
       await fetchUserHistory(loggedInUser);
@@ -451,7 +449,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>活動公告：</strong>請各位玩家上傳<strong> 7/30 以後</strong>的經驗值起始照片！系統會自動辨識等級與經驗值。
+              💡 <strong>操作說明：</strong>請上傳 <strong>7/30 以後</strong>的截圖，系統將**自動幫您辨識並填入等級與經驗值**（若有誤差您也可以手動微調）。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
@@ -530,7 +528,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 排行榜區塊 (成功提交後直接顯示，並提供「鎖定並返回上一頁/重新輸入」按鈕) */}
+      {/* 🏆 排行榜區塊 */}
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
