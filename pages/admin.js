@@ -12,7 +12,6 @@ export default function AdminPage() {
   const [submissions, setSubmissions] = useState([]);
   const [msg, setMsg] = useState('');
 
-  // 簡易管理員密碼（您可以自行修改這組密碼）
   const ADMIN_SECRET = 'artale999';
 
   function handleAdminLogin(e) {
@@ -40,8 +39,41 @@ export default function AdminPage() {
     }
   }
 
+  // 管理員審核狀態切換 (通過 / 拒絕)
+  async function updateStatus(id, newStatus) {
+    if (!supabase) return;
+    const { error } = await supabase
+      .from('submissions')
+      .update({ status: newStatus })
+      .eq('id', id);
+
+    if (error) {
+      setMsg('更新狀態失敗：' + error.message);
+    } else {
+      setMsg(`已成功將紀錄 #${id} 狀態更新為 ${newStatus}`);
+      fetchSubmissions();
+    }
+  }
+
+  // 刪除違規或錯誤的提交紀錄
+  async function deleteSubmission(id) {
+    if (!confirm(`確定要刪除提交紀錄 #${id} 嗎？此動作無法復原。`)) return;
+    if (!supabase) return;
+    const { error } = await supabase
+      .from('submissions')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      setMsg('刪除失敗：' + error.message);
+    } else {
+      setMsg(`已成功刪除紀錄 #${id}`);
+      fetchSubmissions();
+    }
+  }
+
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <Head>
         <title>Artale 夏日練等大賽 - 管理員審核後台</title>
       </Head>
@@ -55,7 +87,7 @@ export default function AdminPage() {
           <h3>🔐 管理員身分驗證</h3>
           <input 
             type="password" 
-            placeholder="請輸入管理員密碼" 
+            placeholder="請輸入管理員密碼 (artale999)" 
             value={adminPassword} 
             onChange={e => setAdminPassword(e.target.value)} 
             style={{ display: 'block', margin: '15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
@@ -70,21 +102,23 @@ export default function AdminPage() {
           </div>
 
           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', minWidth: '800px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', minWidth: '900px' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
                   <th style={{ padding: '10px' }}>ID</th>
                   <th style={{ padding: '10px' }}>角色名稱</th>
                   <th style={{ padding: '10px' }}>等級</th>
                   <th style={{ padding: '10px' }}>經驗值 (EXP)</th>
-                  <th style={{ padding: '10px' }}>審核狀態 / 備註</th>
+                  <th style={{ padding: '10px' }}>手動修改審核</th>
+                  <th style={{ padding: '10px' }}>審核狀態</th>
                   <th style={{ padding: '10px' }}>截圖證明</th>
                   <th style={{ padding: '10px' }}>提交時間</th>
+                  <th style={{ padding: '10px' }}>管理動作</th>
                 </tr>
               </thead>
               <tbody>
                 {submissions.length === 0 ? (
-                  <tr><td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無任何提交紀錄</td></tr>
+                  <tr><td colSpan="9" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無任何提交紀錄</td></tr>
                 ) : (
                   submissions.map((sub) => {
                     const timeStr = sub.created_at ? new Date(sub.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '無時間';
@@ -106,6 +140,11 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td style={{ padding: '10px' }}>
+                          <span style={{ color: sub.status === 'approved' ? '#16a34a' : '#dc2626', fontWeight: 'bold' }}>
+                            {sub.status === 'approved' ? '🟢 已通過' : '🔴 已拒絕'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px' }}>
                           {sub.photo_url ? (
                             <a href={sub.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: 'bold' }}>🔍 檢視截圖原圖</a>
                           ) : (
@@ -113,6 +152,16 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{timeStr}</td>
+                        <td style={{ padding: '10px' }}>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {sub.status === 'approved' ? (
+                              <button onClick={() => updateStatus(sub.id, 'rejected')} style={{ padding: '4px 8px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>設為拒絕</button>
+                            ) : (
+                              <button onClick={() => updateStatus(sub.id, 'approved')} style={{ padding: '4px 8px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>設為通過</button>
+                            )}
+                            <button onClick={() => deleteSubmission(sub.id)} style={{ padding: '4px 8px', background: '#64748b', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>刪除</button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
