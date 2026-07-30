@@ -10,52 +10,27 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 根據精準規則自動生成 1~200 級經驗值對照表（120等基準 + 1.05倍）
+// 🍁 Artale 1~200 級每級所需經驗值對照表 (用於精準換算累積總經驗值)
 function getExpRequiredForLevel(lv) {
-  if (lv <= 0) return 0;
-  if (lv === 120) return 29715818;
-  if (lv > 120) {
-    let exp = 29715818;
-    for (let i = 121; i <= lv; i++) {
-      exp = Math.floor(exp * 1.05);
-    }
-    return exp;
-  }
+  if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
   if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
-  if (lv <= 119) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  return 15;
+  if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
+  if (lv <= 200) return Math.floor(5000000 * Math.pow(1.08, lv - 120));
+  return 1000000000;
 }
 
-const REAL_EXP_TABLE = [];
-for (let i = 0; i <= 200; i++) {
-  REAL_EXP_TABLE[i] = getExpRequiredForLevel(i);
-}
-
-// 🌟 精準跨等成長計算邏輯
-function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
-  if (currLv === baseLv) {
-    return currExp - baseExp;
-  }
-  let growth = 0;
-  growth += ((REAL_EXP_TABLE[baseLv] || 0) - baseExp);
-  for (let i = baseLv + 1; i < currLv; i++) {
-    growth += (REAL_EXP_TABLE[i] || 0);
-  }
-  growth += currExp;
-  return growth > 0 ? growth : 0;
-}
-
+// 計算 1 級到特定等級的累積總經驗值
 function getCumulativeExp(lv) {
   let total = 0;
   for (let i = 1; i < lv; i++) {
-    total += (REAL_EXP_TABLE[i] || 0);
+    total += getExpRequiredForLevel(i);
   }
   return total;
 }
 
-// 🎁 完整正式獎勵標籤
+// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -71,7 +46,7 @@ function getPrizeBadge(rank) {
 export default function Home() {
   const [charId, setCharId] = useState('');
   const [pin, setPin] = useState('');
-  const [loggedInUser, setLoggedInUser] = useState('');
+  const [loggedInUser, setLoggedInUser] = useState(''); // 🔒 鎖定目前登入的角色名稱
   const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -92,6 +67,7 @@ export default function Home() {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEnded, setIsEnded] = useState(false);
 
+  // 初始化檢查 LocalStorage 紀錄
   useEffect(() => {
     const savedUser = localStorage.getItem('artale_user');
     if (savedUser) {
@@ -120,36 +96,39 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  // 🏆 計算全伺服器每位玩家的「累積成長經驗值」
   async function fetchLeaderboard() {
     if (!supabase) return;
-    const { data } = await supabase.from('submissions').select('*').order('id', { ascending: true });
+    const { data } = await supabase
+      .from('submissions')
+      .select('*')
+      .order('id', { ascending: true });
 
     if (data && data.length > 0) {
       const userGroup = {};
       data.forEach(sub => {
         const cleanName = (sub.char_id || '').trim();
         if (!cleanName) return;
-        if (!userGroup[cleanName]) userGroup[cleanName] = [];
+        if (!userGroup[cleanName]) {
+          userGroup[cleanName] = [];
+        }
         userGroup[cleanName].push(sub);
       });
 
       const list = Object.keys(userGroup).map(id => {
         const subs = userGroup[id];
-        const baseline = subs[0];
-        const latest = subs[subs.length - 1];
+        const baseline = subs[0]; // 第一次提交（活動初始基準）
+        const latest = subs[subs.length - 1]; // 最新一次提交
 
-        const baseLv = Number(baseline.level);
-        const baseExp = Number(baseline.exp_val);
-        const currLv = Number(latest.level);
-        const currExp = Number(latest.exp_val);
-
-        const expGrowth = calculateTrueGrowth(baseLv, baseExp, currLv, currExp);
+        const baselineTotal = Number(baseline.total_exp) || 0;
+        const latestTotal = Number(latest.total_exp) || 0;
+        const expGrowth = latestTotal - baselineTotal;
 
         return {
           char_id: id,
           level: latest.level,
           exp_val: latest.exp_val,
-          growth_exp: expGrowth,
+          growth_exp: expGrowth >= 0 ? expGrowth : 0,
           created_at: latest.created_at,
           submission_count: subs.length
         };
@@ -163,8 +142,21 @@ export default function Home() {
   async function fetchUserHistory(id) {
     if (!supabase) return;
     const cleanId = id.trim();
-    const { data } = await supabase.from('submissions').select('*').eq('char_id', cleanId).order('id', { ascending: true });
-    if (data) setHistory(data);
+    const { data } = await supabase
+      .from('submissions')
+      .select('*')
+      .eq('char_id', cleanId)
+      .order('id', { ascending: true });
+
+    if (data) {
+      setHistory(data);
+      if (data.length > 0) {
+        setHasSubmitted(true);
+        fetchLeaderboard();
+      } else {
+        setHasSubmitted(false);
+      }
+    }
   }
 
   async function handleAuth(e) {
@@ -173,7 +165,11 @@ export default function Home() {
     if (!supabase) return setMsg('Supabase 設定未完全');
     if (!cleanId || !pin) return setMsg('請輸入角色名稱與 4 位數 PIN 碼');
 
-    const { data: user } = await supabase.from('participants').select('*').eq('char_id', cleanId).single();
+    const { data: user } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('char_id', cleanId)
+      .single();
 
     if (!user) {
       const { error } = await supabase.from('participants').insert([{ char_id: cleanId, pin }]);
@@ -185,7 +181,9 @@ export default function Home() {
       setHasSubmitted(false);
       fetchUserHistory(cleanId);
     } else {
-      if (user.pin !== pin) return setMsg('PIN 碼不正確！');
+      if (user.pin !== pin) {
+        return setMsg('PIN 碼不正確！');
+      }
       setMsg('登入成功！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
@@ -231,20 +229,23 @@ export default function Home() {
 
   async function handleUpdatePin(e) {
     e.preventDefault();
-    if (!supabase) return setMsg('Supabase 設定未完全');
     if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
 
-    const { error } = await supabase.from('participants').update({ pin: newPin }).eq('char_id', loggedInUser);
+    const { error } = await supabase
+      .from('participants')
+      .update({ pin: newPin })
+      .eq('char_id', loggedInUser);
+
     if (error) {
       setMsg('修改密碼失敗：' + error.message);
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！');
+      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
     }
   }
 
-  // 📸 超級容錯辨識：穩定讀取截圖與自動填入
+  // 📸 超級容錯辨識：自動消除文字空格與斷行
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -272,6 +273,7 @@ export default function Home() {
           const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
           const rawText = result.data.text || '';
 
+          // 🧹 徹底清除所有空白與換行，把字串全部連在一起轉小寫
           const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
           const cleanUser = loggedInUser.replace(/\s+/g, '').toLowerCase();
 
