@@ -8,20 +8,20 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 
 export default function AdminPage() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [adminName, setAdminName] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [submissions, setSubmissions] = useState([]);
   const [msg, setMsg] = useState('');
 
-  const ADMIN_SECRET = 'artale999';
-
   function handleAdminLogin(e) {
     e.preventDefault();
-    if (adminPassword === ADMIN_SECRET) {
+    // 密碼固定為 0，名稱可自行輸入
+    if (adminPassword === '0' && adminName.trim() !== '') {
       setIsAdminLoggedIn(true);
-      setMsg('管理員登入成功！');
+      setMsg(`管理員 【${adminName}】 登入成功！`);
       fetchSubmissions();
     } else {
-      setMsg('管理員密碼錯誤！');
+      setMsg('登入失敗：請輸入管理員名稱，且密碼必須為 0！');
     }
   }
 
@@ -39,7 +39,6 @@ export default function AdminPage() {
     }
   }
 
-  // 管理員審核狀態切換 (通過 / 拒絕)
   async function updateStatus(id, newStatus) {
     if (!supabase) return;
     const { error } = await supabase
@@ -55,7 +54,6 @@ export default function AdminPage() {
     }
   }
 
-  // 刪除違規或錯誤的提交紀錄
   async function deleteSubmission(id) {
     if (!confirm(`確定要刪除提交紀錄 #${id} 嗎？此動作無法復原。`)) return;
     if (!supabase) return;
@@ -85,19 +83,28 @@ export default function AdminPage() {
       {!isAdminLoggedIn ? (
         <form onSubmit={handleAdminLogin} style={{ background: '#f8fafc', padding: '30px', borderRadius: '12px', border: '1px solid #e2e8f0', maxWidth: '400px', margin: '50px auto' }}>
           <h3>🔐 管理員身分驗證</h3>
+          <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>管理員名稱：</label>
+          <input 
+            type="text" 
+            placeholder="請自行輸入您的管理員名稱" 
+            value={adminName} 
+            onChange={e => setAdminName(e.target.value)} 
+            style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+          />
+          <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>管理員密碼：</label>
           <input 
             type="password" 
-            placeholder="請輸入管理員密碼 (artale999)" 
+            placeholder="密碼請輸入 0" 
             value={adminPassword} 
             onChange={e => setAdminPassword(e.target.value)} 
-            style={{ display: 'block', margin: '15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+            style={{ display: 'block', margin: '5px 0 20px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
           />
           <button type="submit" style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}>登入後台</button>
         </form>
       ) : (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <p style={{ margin: 0, fontSize: '16px' }}>總提交紀錄筆數：<strong>{submissions.length}</strong> 筆</p>
+            <p style={{ margin: 0, fontSize: '16px' }}>管理員：<strong>{adminName}</strong> | 總提交紀錄筆數：<strong>{submissions.length}</strong> 筆</p>
             <button onClick={fetchSubmissions} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔄 重新整理資料</button>
           </div>
 
