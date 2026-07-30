@@ -29,6 +29,7 @@ function getCumulativeExp(lv) {
   return total;
 }
 
+// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -48,7 +49,7 @@ export default function Home() {
   const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false); // 🔒 每次開啟須上傳才解鎖
+  const [hasSubmitted, setHasSubmitted] = useState(false); // 🔒 每次開啟需上傳才解鎖
   
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
@@ -62,6 +63,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
+  // ⏱️ 倒數計時狀態
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEnded, setIsEnded] = useState(false);
 
@@ -73,6 +75,7 @@ export default function Home() {
       fetchUserHistory(savedUser);
     }
 
+    // 啟動倒數計時器
     const timer = setInterval(() => {
       const now = new Date().getTime();
       const difference = DEADLINE - now;
@@ -253,7 +256,7 @@ export default function Home() {
     }
   }
 
-  // ⚡ 動態確保 Tesseract 套件加載完成 (不卡住、不失效)
+  // ⚡ 動態確保 Tesseract 辨識套件加載完成 (防卡死、不失效)
   function ensureTesseractLoaded() {
     return new Promise((resolve, reject) => {
       if (window.Tesseract) return resolve(window.Tesseract);
@@ -424,6 +427,7 @@ export default function Home() {
 
       <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale 夏日練等大賽</h1>
 
+      {/* ⏱️ 醒目的活動倒數計時橫幅 */}
       <div style={{ background: isEnded ? '#fef2f2' : '#f0fdf4', border: '2px solid ' + (isEnded ? '#fecdd3' : '#bbf7d0'), padding: '12px 20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h3 style={{ margin: 0, color: isEnded ? '#dc2626' : '#15803d' }}>
           {isEnded ? '⏰ 活動已於 9月8日 07:59 正式截止結算！' : '⏱️ 活動剩餘倒數時間（結算截止：9/8 07:59）'}
@@ -446,6 +450,7 @@ export default function Home() {
         </form>
       ) : (
         <div>
+          {/* 回報成績表單 */}
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
@@ -535,6 +540,7 @@ export default function Home() {
             )}
           </div>
 
+          {/* ⚙️ 個人設定區（改名與修改密碼） */}
           <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
             <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
             
