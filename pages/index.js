@@ -6,7 +6,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
 // 🍁 Artale 1~200 級「每一級升等所需」的經驗值對照表（120等後每升一等為上一等級的 1.05 倍）
@@ -17,11 +17,12 @@ function getExpRequiredForLevel(lv) {
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
   if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
   if (lv <= 200) return Math.floor(5000000 * Math.pow(1.05, lv - 120));
-  return 1000000000;
+  return 2000000000;
 }
 
-// 🎯 核心成長計算邏輯：以第一次基準點為出發點，精準計算升等前未記錄到與跨等時的總成長經驗值
+// 🎯 核心成長計算邏輯：以玩家的第一筆（7/30 起始基準）為起點，精準計算跨等與未記錄經驗
 function calculateGrowthExp(baseline, latest) {
+  if (!baseline || !latest) return 0;
   const baseLv = Number(baseline.level);
   const baseExp = Number(baseline.exp_val) || 0;
   const currLv = Number(latest.level);
@@ -32,19 +33,23 @@ function calculateGrowthExp(baseline, latest) {
     return Math.max(0, currExp - baseExp);
   }
 
-  // 如果等級上升了，分三段精準計算：
+  // 如果等級下降或異常，防呆回傳 0
+  if (currLv < baseLv) {
+    return 0;
+  }
+
   let totalGrowth = 0;
 
   // 1. 基準那一級剩餘未練完的經驗值
   const baseLevelReq = getExpRequiredForLevel(baseLv);
   totalGrowth += Math.max(0, baseLevelReq - baseExp);
 
-  // 2. 中間跨過去的完整等級經驗值
-  for (let l = baseLv + 1; l < currLv; l++) {
+  // 2. 中間跨過去的完整等級經驗值總和（最高到 200 等）
+  for (let l = baseLv + 1; l < currLv && l <= 200; l++) {
     totalGrowth += getExpRequiredForLevel(l);
   }
 
-  // 3. 最新那一級目前已練到的經驗值
+  // 3. 最新那一級目前已練到的經驗值零頭
   totalGrowth += currExp;
 
   return totalGrowth;
@@ -112,6 +117,7 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  // 🏆 抓取排行榜：嚴格按時間排序，確保每個玩家的第一筆資料為基準點
   async function fetchLeaderboard() {
     if (!supabase) return;
     const { data } = await supabase.from('submissions').select('*').order('id', { ascending: true });
@@ -126,10 +132,11 @@ export default function Home() {
 
       const list = Object.keys(userGroup).map(id => {
         const subs = userGroup[id];
-        const baseline = subs[0]; // 第一筆為 7/30 起始基準成績
-        const latest = subs[subs.length - 1]; // 最新一筆為當前成績
+        subs.sort((a, b) => a.id - b.id); // 確保第一筆絕對是該玩家的最舊資料
+        
+        const baseline = subs[0]; // 7/30 第一筆基準資料
+        const latest = subs[subs.length - 1]; // 當前最新資料
 
-        // 透過新的成長計算函式得出總成長經驗值
         const expGrowth = calculateGrowthExp(baseline, latest);
 
         return {
@@ -151,7 +158,10 @@ export default function Home() {
     if (!supabase) return;
     const cleanId = id.trim();
     const { data } = await supabase.from('submissions').select('*').eq('char_id', cleanId).order('id', { ascending: true });
-    if (data) setHistory(data);
+    if (data) {
+      data.sort((a, b) => a.id - b.id);
+      setHistory(data);
+    }
   }
 
   async function handleAuth(e) {
@@ -258,7 +268,7 @@ export default function Home() {
     });
   }
 
-  // 📸 自動精準辨識與填入
+  // 📸 高精度自動辨識與填入（修正：精準對應 Lv 與 EXP 關鍵字，防止數字誤判）
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -275,6 +285,8 @@ export default function Home() {
         
         let foundLv = '';
         const lines = text.split('\n');
+        
+        // 優先尋找明確包含 Lv / Level 關鍵字的行
         for (let line of lines) {
           const match = line.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
           if (match && match[1]) {
@@ -285,6 +297,7 @@ export default function Home() {
             }
           }
         }
+        
         if (!foundLv) {
           const allPotentialLvs = text.match(/\b([1-9][0-9]|1[0-9]{2}|200)\b/g);
           if (allPotentialLvs) {
@@ -296,13 +309,15 @@ export default function Home() {
         }
         if (foundLv) setLevel(foundLv);
 
+        // 優先尋找包含 EXP 關鍵字的數值
         let foundExp = '';
         const expMatch = text.match(/exp[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
           foundExp = expMatch[1].replace(/[,.]/g, '');
           setExpVal(foundExp);
         } else {
-          const allNums = text.replace(/[,.]/g, '').match(/\d{6,10}/g);
+          // 若無關鍵字，抓取畫面中 7 到 10 位的長數字（經驗值零頭）
+          const allNums = text.replace(/[,.]/g, '').match(/\d{7,10}/g);
           if (allNums && allNums.length > 0) {
             allNums.sort((a, b) => b.length - a.length);
             foundExp = allNums[0];
@@ -311,7 +326,7 @@ export default function Home() {
         }
 
         if (foundLv || foundExp) {
-          setMsg('✨ 自動辨識成功！數值已填入，請確認是否正確，若有誤差可手動修改。');
+          setMsg('✨ 自動辨識成功！數值已自動匯入，請核對是否正確。');
         } else {
           setMsg('💡 未能自動辨識，請手動輸入等級與經驗值。');
         }
@@ -346,15 +361,15 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      // 直接儲存當前等級與零頭經驗值，由前端動態計算成長量
+      // 直接儲存當前等級與零頭經驗值，由前端統一透過第一筆基準動態計算
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
         exp_val: inputExpNum,
-        total_exp: 0, // 保留欄位，改用動態區間計算
+        total_exp: 0, 
         photo_url: photoUrl,
         status: 'approved',
-        is_manually_edited: true,
+        is_manually_edited: false, // 自動匯入預設不標記手動修改
         checked_by: null
       }]);
 
@@ -411,7 +426,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>首次上傳將作為 7/30 起始基準點，後續上傳系統會自動計算您跨越升級與未記錄經驗的總成長量！
+              💡 <strong>操作說明：</strong>系統會自動辨識並填入數值。若您有手動修改數值，系統會自動標記；若直接使用自動匯入則不會標記。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
@@ -425,7 +440,10 @@ export default function Home() {
               placeholder="例如：173" 
               disabled={isEnded} 
               value={level} 
-              onChange={e => setLevel(e.target.value)} 
+              onChange={e => {
+                setLevel(e.target.value);
+                // 玩家手動修改時才標記
+              }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
@@ -435,7 +453,9 @@ export default function Home() {
               placeholder="例如：246011374" 
               disabled={isEnded}
               value={expVal} 
-              onChange={e => setExpVal(e.target.value)} 
+              onChange={e => {
+                setExpVal(e.target.value);
+              }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
@@ -451,7 +471,7 @@ export default function Home() {
               <ul style={{ paddingLeft: '20px', margin: 0, color: '#475569', fontSize: '14px' }}>
                 {history.map((h, idx) => {
                   const timeStr = h.created_at ? new Date(h.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-                  const baseline = history[0];
+                  const baseline = history[0]; // 確保第一筆為基準
                   const growthFromBase = calculateGrowthExp(baseline, h);
                   return (
                     <li key={idx} style={{ marginBottom: '6px' }}>
