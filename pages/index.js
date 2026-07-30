@@ -86,7 +86,6 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [dateNotice, setDateNotice] = useState('');
   const [charNotice, setCharNotice] = useState('');
-  const [rawOcrText, setRawOcrText] = useState(''); // 🔍 除錯用原始文字
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -245,7 +244,7 @@ export default function Home() {
     }
   }
 
-  // 📸 Canvas 圖片放大預處理[cite: 1]
+  // 📸 Canvas 圖片放大預處理（保持像素銳利）[cite: 1]
   async function preprocessAndScaleImage(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -279,10 +278,10 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setRawOcrText('');
-    setMsg('⚡ 正在進行截圖數據解析...');
+    setMsg('⚡ 正在進行繁體中文防作弊與數據解析...');
 
     const now = new Date();
+    const YYYY = now.getFullYear();
     const M = now.getMonth() + 1;
     const D = now.getDate();
     const MM = String(M).padStart(2, '0');
@@ -292,35 +291,44 @@ export default function Home() {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
+        // 🔐 啟用雙語辨識 (chi_tra + eng) 確保抓取中文名字與數字[cite: 1]
         const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
         const rawText = result.data.text || '';
-        
-        // 🔍 顯示除錯文字
-        setRawOcrText(rawText);
-
         const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
+        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        // --- 1. 🎯 名稱核對（對應中文 OCR 容易變形，採用寬鬆提示） ---
+        console.log("OCR 辨識原始文字：", rawText);
+
+        // --- 1. 🎯 角色名稱防作弊比對[cite: 1] ---
         if (loggedInUser) {
-          if (rawText.includes(loggedInUser) || cleanRaw.includes(loggedInUser.toLowerCase())) {
-            setCharNotice(`✅ 成功偵測到角色名稱【${loggedInUser}】`);
+          if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
+            setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
           } else {
-            setCharNotice(`💡 提醒：由於遊戲字型特殊，若未完全對應將由後台審核。`);
+            setCharNotice(`⚠️ 提醒：截圖中未直接讀取到【${loggedInUser}】，將交由後台審核。`);
           }
         }
 
-        // --- 2. 🎯 等級 (Lv) 抓取（寬鬆抓取，若抓不到可手動填寫） ---
+        // --- 2. 🎯 等級 (Lv) 抓取[cite: 1] ---
         let detectedLv = '';
-        const lvMatch = rawText.match(/(?:lv|lvl|level|等級|l[\s.:\-_]*v)[\s.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i);
+        const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
+
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
-          if (val >= 1 && val <= 200) detectedLv = String(val);
-        }
-        if (detectedLv) {
-          setLevel(detectedLv);
+          if (val >= 1 && val <= 200) {
+            detectedLv = String(val);
+          }
         }
 
-        // --- 3. 🎯 經驗值 (EXP) 抓取（完美抓取長數字）[cite: 1] ---
+        if (!detectedLv) {
+          const allNums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+          if (allNums && allNums.length > 0) {
+            const validLvs = allNums.map(Number).filter(n => n >= 50 && n <= 200);
+            detectedLv = validLvs.length > 0 ? String(validLvs[0]) : allNums[0];
+          }
+        }
+        if (detectedLv) setLevel(detectedLv);
+
+        // --- 3. 🎯 經驗值 (EXP) 抓取[cite: 1] ---
         let detectedExp = '';
         const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || cleanRaw.match(/exp\[?(\d{5,12})/i);
         if (expMatch && expMatch[1]) {
@@ -334,11 +342,11 @@ export default function Home() {
         }
         if (detectedExp) setExpVal(detectedExp);
 
-        // --- 4. 🎯 日期核對 ---
+        // --- 4. 🎯 日期核對[cite: 1] ---
         const dateTargets = [
           `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
           `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
-          `${MM}${DD}`
+          `${MM}${DD}`, `${YYYY}${MM}${DD}`, `${YYYY}/${M}/${D}`, `${YYYY}/${MM}/${DD}`
         ];
 
         let hasDate = false;
@@ -350,12 +358,12 @@ export default function Home() {
         }
 
         if (hasDate) {
-          setDateNotice(`✅ 成功驗證今日日期（${M}/${D}）`);
+          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面未抓到日期（${M}/${D}），將交由後台審核。`);
+          setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
         }
 
-        setMsg('🎉 掃描完成！請檢查上方除錯面板與自動代入的數值。');
+        setMsg('🎉 掃描完成！請確認自動代入的數值，若有誤差可直接手動修正。');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
@@ -452,21 +460,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取數值！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將進行繁體中文防作弊與數據解析！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行截圖數據解析...</p>}
-
-            {/* 🔍 OCR 原始文字除錯檢視面板 */}
-            {rawOcrText && (
-              <div style={{ background: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '8px', fontSize: '12px', marginBottom: '15px', fontFamily: 'monospace', border: '1px solid #334155' }}>
-                <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#facc15' }}>🔍 [除錯面板] Tesseract 實際讀到的原始文字：</p>
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#f8fafc', maxHeight: '120px', overflowY: 'auto' }}>{rawOcrText}</pre>
-              </div>
-            )}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行繁體中文與數據解析...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
