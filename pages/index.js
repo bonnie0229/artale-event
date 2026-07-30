@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import Head from 'next/head';
 import { createClient } from '@supabase/supabase-js';
-import Leaderboard from '../components/Leaderboard';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -16,12 +16,28 @@ export default function Home() {
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
   const [players, setPlayers] = useState([]);
+  const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
+  const [dateErr, setDateErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     fetchLeaderboard();
   }, []);
+
+  useEffect(() => {
+    if (isLoggedIn && charId) {
+      fetchUserHistory(charId);
+    }
+  }, [isLoggedIn, charId]);
+
+  // 取得台灣時間今天的 M/D (例如: 7/30)
+  function getTodayTaiwanStr() {
+    const now = new Date();
+    const twDateStr = now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' });
+    return twDateStr; // 例如 "7/30"
+  }
 
   async function fetchLeaderboard() {
     if (!supabase) return;
@@ -39,6 +55,19 @@ export default function Home() {
       });
       const list = Object.values(latestMap).sort((a, b) => b.total_exp - a.total_exp);
       setPlayers(list);
+    }
+  }
+
+  async function fetchUserHistory(id) {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from('submissions')
+      .select('*')
+      .eq('char_id', id)
+      .order('id', { ascending: true });
+
+    if (data) {
+      setHistory(data);
     }
   }
 
@@ -85,15 +114,70 @@ export default function Home() {
     }
   }
 
+  // 📸 自動辨識圖片內容 + 驗證今日日期 (台灣時間)
+  async function handleFileChange(e) {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+    setFile(selectedFile);
+    setScanning(true);
+    setDateErr('');
+    setMsg('🔍 正在掃描截圖中的日期、等級與經驗值...');
+
+    const todayStr = getTodayTaiwanStr(); // 取得今天台灣日期 (例如 "7/30")
+    const [month, day] = todayStr.split('/');
+
+    try {
+      if (window.Tesseract) {
+        const result = await window.Tesseract.recognize(selectedFile, 'eng');
+        const text = result.data.text;
+
+        // 1. 日期比對邏輯 (搜尋 7/30, 07/30, 7月30日, 2026/7/30 等多種格式)
+        const monthPattern = month.padStart(2, '0') + '|' + month;
+        const dayPattern = day.padStart(2, '0') + '|' + day;
+        const dateRegex = new RegExp(`(${monthPattern})[/\\-.月](${dayPattern})`, 'i');
+
+        const hasTodayDate = dateRegex.test(text);
+
+        if (!hasTodayDate) {
+          setDateErr(`⚠️ 日期錯誤！截圖內未找到今日台灣日期（${todayStr}），請確認是否上傳今日最新截圖。`);
+        } else {
+          setDateErr('');
+        }
+
+        // 2. 抓取數字（等級與經驗值）
+        const numbers = text.match(/\d+/g);
+        if (numbers && numbers.length > 0) {
+          const possibleLv = numbers.find(n => Number(n) >= 1 && Number(n) <= 300);
+          const possibleExp = numbers.find(n => n.length >= 4);
+
+          if (possibleLv) setLevel(possibleLv);
+          if (possibleExp) setExpVal(possibleExp);
+
+          setMsg('✨ 自動掃描完成！請檢查自動帶入的等級與經驗值，若有誤差請手動修改。');
+        } else {
+          setMsg('⚠️ 截圖已選擇，若未自動帶入資料，請手動填寫等級與經驗值。');
+        }
+      } else {
+        setMsg('截圖已選擇！請手動確認或輸入等級與經驗值。');
+      }
+    } catch (err) {
+      setMsg('照片已選擇，請手動填寫等級與經驗值。');
+    } finally {
+      setScanning(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!file) return setMsg('請選擇截圖照片');
+    if (!level || !expVal) return setMsg('請填寫或確認等級與經驗值');
+    if (dateErr) return setMsg('無法提交：' + dateErr);
+
     setLoading(true);
-    setMsg('照片上傳中...');
+    setMsg('照片與成績上傳中...');
 
     try {
       const fileExt = file.name.split('.').pop();
-      // 💡 關鍵修復：檔名改用純英文數字，避免中文名字導致 Invalid key 錯誤
       const fileName = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
@@ -120,8 +204,9 @@ export default function Home() {
 
       if (subError) throw subError;
 
-      setMsg('成績已成功提交！');
+      setMsg('🎉 成績已成功提交！');
       fetchLeaderboard();
+      fetchUserHistory(charId);
     } catch (err) {
       setMsg('上傳失敗：' + err.message);
     } finally {
@@ -130,41 +215,151 @@ export default function Home() {
   }
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+      <Head>
+        <title>Artale 夏日練等大賽</title>
+        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+      </Head>
+
       <h1 style={{ textAlign: 'center', color: '#1e293b' }}>🍁 Artale 夏日練等大賽</h1>
 
-      {msg && <div style={{ background: '#3b82f6', color: '#fff', padding: '10px', borderRadius: '8px', marginBottom: '15px' }}>{msg}</div>}
+      {msg && <div style={{ background: '#3b82f6', color: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '15px', fontWeight: 'bold' }}>{msg}</div>}
 
       {!isLoggedIn ? (
         <form onSubmit={handleAuth} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
           <h3>🔑 玩家登入 / 報名</h3>
-          <input type="text" placeholder="遊戲角色 ID" value={charId} onChange={e => setCharId(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-          <input type="password" placeholder="自訂 4 位數預設 PIN 碼" value={pin} onChange={e => setPin(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-          <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>登入 / 註冊</button>
+          <input type="text" placeholder="遊戲角色 ID" value={charId} onChange={e => setCharId(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+          <input type="password" placeholder="自訂 4 位數預設 PIN 碼" value={pin} onChange={e => setPin(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+          <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>登入 / 註冊</button>
         </form>
       ) : (
         <div>
           {/* 回報成績表單 */}
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <h3>📸 回報等級與截圖 (目前登入：{charId})</h3>
-            <input type="number" placeholder="當前等級 (Lv)" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-            <input type="number" placeholder="經驗值數字 (EXP)" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-            <input type="file" accept="image/*" onChange={e => setFile(e.target.files[0])} style={{ display: 'block', margin: '10px 0' }} />
-            <button type="submit" disabled={loading} style={{ padding: '10px 20px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{loading ? '上傳中...' : '提交成績'}</button>
+            <h3>📸 回報等級與截圖 (目前登入：<span style={{ color: '#2563eb' }}>{charId}</span>)</h3>
+            
+            {/* 引導說明文字 */}
+            <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
+              💡 <strong>操作說明：</strong>請先選擇上傳今日遊戲截圖，系統會自動比對時間並帶入等級與經驗值。若辨識有誤或未帶出，請手動修改。
+            </div>
+
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳今日證明截圖：</label>
+            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
+            
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⏳ 截圖與日期辨識中，請稍候...</p>}
+            
+            {/* 🔴 日期錯誤提示 */}
+            {dateErr && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecdd3', color: '#dc2626', padding: '10px', borderRadius: '6px', fontWeight: 'bold', margin: '10px 0' }}>
+                {dateErr}
+              </div>
+            )}
+
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
+            <input type="number" placeholder="例如：120" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
+            <input type="number" placeholder="例如：4523000" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+
+            <button type="submit" disabled={loading || scanning} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
+              {loading ? '提交中...' : '確認並提交成績'}
+            </button>
           </form>
+
+          {/* 📈 角色經驗值走勢圖 */}
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{charId}】的經驗值成長走勢</h3>
+            {history.length < 2 ? (
+              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
+            ) : (
+              <div style={{ width: '100%', overflowX: 'auto' }}>
+                <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
+                  {(() => {
+                    const maxExp = Math.max(...history.map(h => h.total_exp || 0));
+                    const minExp = Math.min(...history.map(h => h.total_exp || 0));
+                    const expRange = (maxExp - minExp) || 1;
+                    
+                    const points = history.map((h, index) => {
+                      const x = 40 + (index / (history.length - 1)) * 420;
+                      const y = 140 - (((h.total_exp || 0) - minExp) / expRange) * 100;
+                      return `${x},${y}`;
+                    }).join(' ');
+
+                    return (
+                      <>
+                        <polyline fill="none" stroke="#2563eb" strokeWidth="3" points={points} />
+                        {history.map((h, index) => {
+                          const x = 40 + (index / (history.length - 1)) * 420;
+                          const y = 140 - (((h.total_exp || 0) - minExp) / expRange) * 100;
+                          const dateStr = h.created_at ? new Date(h.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) : `第${index+1}次`;
+                          return (
+                            <g key={index}>
+                              <circle cx={x} cy={y} r="5" fill="#1d4ed8" />
+                              <text x={x} y={y - 10} fontSize="11" textAnchor="middle" fill="#1e293b" fontWeight="bold">Lv.{h.level}</text>
+                              <text x={x} y="165" fontSize="10" textAnchor="middle" fill="#64748b">{dateStr}</text>
+                            </g>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+            )}
+          </div>
 
           {/* 修改 PIN 碼表單 */}
           <form onSubmit={handleUpdatePin} style={{ background: '#fff1f2', padding: '15px 20px', borderRadius: '12px', border: '1px solid #fecdd3', marginBottom: '30px' }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#9f1239' }}>⚙️ 修改個人的 4 位數 PIN 碼</h4>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%' }} />
-              <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>更新密碼</button>
+              <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #fda4af' }} />
+              <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
             </div>
           </form>
         </div>
       )}
 
-      <Leaderboard players={players} />
+      {/* 🏆 排行榜 (含最後上傳時間) */}
+      <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <h2 style={{ color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginTop: 0 }}>🏆 練等大賽即時排行榜</h2>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
+              <th style={{ padding: '12px 8px' }}>名次</th>
+              <th style={{ padding: '12px 8px' }}>角色名稱</th>
+              <th style={{ padding: '12px 8px' }}>等級</th>
+              <th style={{ padding: '12px 8px' }}>經驗值</th>
+              <th style={{ padding: '12px 8px' }}>最後上傳時間</th>
+              <th style={{ padding: '12px 8px' }}>截圖</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.length === 0 ? (
+              <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
+            ) : (
+              players.map((p, idx) => {
+                const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
+                return (
+                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
+                      {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                    </td>
+                    <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
+                    <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
+                    <td style={{ padding: '12px 8px' }}>{p.exp_val ? Number(p.exp_val).toLocaleString() : 0}</td>
+                    <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
+                    <td style={{ padding: '12px 8px' }}>
+                      {p.photo_url ? (
+                        <a href={p.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 'bold' }}>看照片 📸</a>
+                      ) : '無'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
