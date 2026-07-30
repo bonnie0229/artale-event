@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import Script from 'next/script';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -285,17 +284,17 @@ export default function Home() {
     });
   }
 
-  // 📸 大幅升級：極速分析圖像 + 錯字容錯 + 超時保護機制
+  // 📸 圖像自動帶入 LV / EXP / 日期 (移除計時器，完整進行 OCR)
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
-    
+
     setFile(selectedFile);
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('🔍 正在辨識截圖內容...');
+    setMsg('⚡ 正在啟動辨識引擎，分析截圖數據中 (約需 3~6 秒)...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -304,39 +303,32 @@ export default function Home() {
     const MM = String(M).padStart(2, '0');
     const DD = String(D).padStart(2, '0');
 
-    // 🛡️ 超時機制：最多辨識 6 秒，逾時自動解鎖供使用者手動輸入，絕不卡住！
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('辨識超時')), 6000)
-    );
-
     try {
-      const ocrPromise = (async () => {
-        const ocrImage = await prepareImageForOCR(selectedFile);
-        if (window.Tesseract) {
-          const result = await window.Tesseract.recognize(ocrImage, 'eng');
-          return result.data.text;
-        }
-        return '';
-      })();
+      const ocrImage = await prepareImageForOCR(selectedFile);
 
-      const text = await Promise.race([ocrPromise, timeoutPromise]);
+      if (window.Tesseract) {
+        const result = await window.Tesseract.recognize(ocrImage, 'eng');
+        const text = result.data.text || '';
 
-      if (text) {
         // 1. 🎯 抓取 LV (等級)
-        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
-        if (lvMatch && lvMatch[1]) setLevel(lvMatch[1]);
+        const lvMatch = text.match(/(?:LV|Lv|lv)[\s\.:]*(\d{1,3})/i);
+        if (lvMatch && lvMatch[1]) {
+          setLevel(lvMatch[1]);
+        }
 
-        // 2. 🎯 抓取 EXP (經驗值)
-        const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
-        if (expMatch && expMatch[1]) setExpVal(expMatch[1]);
+        // 2. 🎯 抓取 EXP (經驗值) - 支援千分位逗號 (如 246,011,374 -> 246011374)
+        const expMatch = text.match(/EXP[\s\.:]*([\d,]+)/i);
+        if (expMatch && expMatch[1]) {
+          const cleanExp = expMatch[1].replace(/,/g, '');
+          setExpVal(cleanExp);
+        }
 
-        // 3. 🛡️ 超強容錯日期匹配 (自動容許 0<->O/o, /<->I/l/| 等 OCR 誤判錯字)
+        // 3. 🎯 日期容錯比對 (自動容許 0<->O/o, /<->I/l 等錯字)
         const yearPat = `${YYYY}`;
         const monthPat = `(0|O|o)?${M}`;
         const dayPat = `(0|O|o)?${D}`;
         const sepPat = `[/\\-.lI|\\s]*`;
 
-        // 包含 7/30、0730、O73O、7月30日 等容錯組合
         const fullDateRegex = new RegExp(`${yearPat}${sepPat}${monthPat}${sepPat}${dayPat}`, 'i');
         const shortDateRegex = new RegExp(`(^|[^\\d])${monthPat}${sepPat}${dayPat}([^\\d]|$)`, 'i');
         const chineseDateRegex = new RegExp(`${monthPat}月${dayPat}`, 'i');
@@ -353,14 +345,14 @@ export default function Home() {
           setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
 
-        setMsg('✨ 分析完成！請檢查自動帶入的 LV 與 EXP 數字，若有偏差可直接手動修改。');
+        setMsg('🎉 辨識完成！系統已為您自動帶入 LV 與 EXP，請核對數字是否正確。');
       } else {
-        setMsg('請檢查並手動確認填寫等級與經驗值。');
+        setMsg('⚠️ 辨識套件載入中，若未自動帶入，請手動確認等級與經驗值。');
       }
     } catch (err) {
-      setMsg('💡 圖片已選擇！若數據未自動填入，請直接在下方手動輸入 LV 與 EXP 即可提交。');
+      setMsg('💡 圖片已選擇！請手動確認填寫等級與經驗值。');
     } finally {
-      setScanning(false); // 🔒 100% 確保解除掃描狀態，絕不卡住！
+      setScanning(false);
     }
   }
 
@@ -421,10 +413,8 @@ export default function Home() {
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <Head>
         <title>Artale 夏日練等大賽</title>
+        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
-      
-      {/* 🚀 Next.js 官方標準載入器 (穩定且快) */}
-      <Script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" strategy="afterInteractive" />
 
       <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale 夏日練等大賽</h1>
 
