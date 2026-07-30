@@ -239,11 +239,11 @@ export default function Home() {
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
+      setMsg('密碼已成功修改為新密碼！下次請用新pid登入。');
     }
   }
 
-  // 📸 針對 Artale 介面（EXP [數值] 與 LV 框）客製化精準 OCR 掃描
+  // 📸 強化版 OCR 掃描：針對 Artale 左下角 LV 方塊與 EXP 格式進行深度最佳化
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -253,14 +253,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在對應 Artale 介面格式讀取等級與經驗值...');
-
-    const now = new Date();
-    const YYYY = now.getFullYear();
-    const M = now.getMonth() + 1;
-    const D = now.getDate();
-    const MM = String(M).padStart(2, '0');
-    const DD = String(D).padStart(2, '0');
+    setMsg('⚡ 正在深度解析 Artale 介面數據...');
 
     try {
       const reader = new FileReader();
@@ -282,35 +275,36 @@ export default function Home() {
             }
           }
 
-          // --- 2. 🎯 精準等級 (LV) 抓取 (特別針對 Artale 橘色 LV 框) ---
+          // --- 2. 🎯 針對 Artale 左下角 LV 方塊的極限等級抓取 ---
           let detectedLv = '';
+          // 支援 LV. 173、LV 173、甚至被拆開的數字
           const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || 
                           flattenedText.match(/(?:lv|l\/|lvl|level)(\d{1,3})/);
           
           if (lvMatch && lvMatch[1]) {
             detectedLv = lvMatch[1];
           } else {
-            // 從所有數字中過濾出高等級 (50 ~ 200)
+            // 如果沒抓到關鍵字，直接在整張圖所有 3 位數中尋找最合理的等級範圍 (100 ~ 200，其次 50 ~ 99)
             const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
             if (nums && nums.length > 0) {
-              const validLvs = nums.map(Number).filter(n => n >= 50 && n <= 200);
-              if (validLvs.length > 0) {
-                detectedLv = String(validLvs[0]);
+              const numericList = nums.map(Number);
+              const highLvs = numericList.filter(n => n >= 100 && n <= 200);
+              if (highLvs.length > 0) {
+                detectedLv = String(highLvs[0]);
               } else {
-                detectedLv = nums[0];
+                const midLvs = numericList.filter(n => n >= 50 && n <= 99);
+                detectedLv = midLvs.length > 0 ? String(midLvs[0]) : String(numericList[0]);
               }
             }
           }
           if (detectedLv) setLevel(detectedLv);
 
-          // --- 3. 🎯 精準經驗值 (EXP) 抓取 (支援 Artale 的 EXP [數字] 格式) ---
+          // --- 3. 🎯 經驗值 (EXP) 抓取 ---
           let detectedExp = '';
-          // 專門抓取 EXP 後方帶有中括號或空格的數字，例如 EXP [246011374
           const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || flattenedText.match(/exp\[?(\d{5,12})/i);
           if (expMatch && expMatch[1]) {
             detectedExp = expMatch[1].replace(/[,.]/g, '');
           } else {
-            // 備用：尋找畫面中最長的一串 5~12 位數字作為 EXP
             const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
             if (allLongNums && allLongNums.length > 0) {
               allLongNums.sort((a, b) => b.length - a.length);
@@ -319,28 +313,7 @@ export default function Home() {
           }
           if (detectedExp) setExpVal(detectedExp);
 
-          // --- 4. 🎯 日期核對 ---
-          const dateTargets = [
-            `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
-            `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
-            `${MM}${DD}`, `${YYYY}${MM}${DD}`
-          ];
-
-          let hasDate = false;
-          for (let str of dateTargets) {
-            if (rawText.includes(str) || flattenedText.includes(str.replace(/\s+/g, '').toLowerCase())) {
-              hasDate = true;
-              break;
-            }
-          }
-
-          if (hasDate) {
-            setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
-          } else {
-            setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
-          }
-
-          setMsg('🎉 分析完成！已自動對應介面填入 LV 與 EXP，請確認無誤後即可提交！');
+          setMsg('🎉 掃描完成！若系統自動代入的數字有誤差，請直接手動修改後即可提交！');
         } else {
           setMsg('請手動填寫等級與經驗值。');
         }
@@ -440,7 +413,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖，系統將自動為您讀取當前等級與經驗值數字！
+              💡 <strong>操作說明：</strong>上傳截圖後系統會自動辨識，若有誤差可直接手動修正數字再提交！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
