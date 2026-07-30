@@ -10,35 +10,29 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 // 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁【請在這裡替換成妳手邊真實的等級經驗值資料！】
-// 第 i 個數字代表「第 i 級升下一級」所需的完整經驗值
+// 🍁【請在這裡保持妳手邊真實的等級經驗值資料！】
 const REAL_EXP_TABLE = [
-  0,       // 0級 (無)
+  0,       // 0級
   15,      // 1級 -> 2級
   34,      // 2級 -> 3級
   57,      // 3級 -> 4級
-  // ⬇️ 拜託把妳手邊真實的 1~200 級經驗值資料，完整貼在這邊覆蓋掉舊的！
+  // ⬇️ 拜託把妳手邊真實的 1~200 級經驗值資料完整貼在這邊！
 ];
 
-// 🌟 完全依照妳的正確邏輯：精準計算「第一張截圖」到「現在」的真實成長量
+// 🌟 精準跨等成長計算邏輯
 function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
   if (currLv === baseLv) {
     return currExp - baseExp;
   }
   let growth = 0;
-  // 1. 補滿「第一張截圖（基準等級）」距離升等還差多少經驗值
   growth += ((REAL_EXP_TABLE[baseLv] || 0) - baseExp);
-  // 2. 加上中間跨越的每一個等級的「完整升級需求經驗值」
   for (let i = baseLv + 1; i < currLv; i++) {
     growth += (REAL_EXP_TABLE[i] || 0);
   }
-  // 3. 加上「當前等級」身上已經打到的經驗值
   growth += currExp;
-  
   return growth > 0 ? growth : 0;
 }
 
-// 獲取絕對累積經驗值 (僅用於畫歷史走勢折線圖的高低 Y 軸)
 function getCumulativeExp(lv) {
   let total = 0;
   for (let i = 1; i < lv; i++) {
@@ -113,19 +107,14 @@ export default function Home() {
 
   async function fetchLeaderboard() {
     if (!supabase) return;
-    const { data } = await supabase
-      .from('submissions')
-      .select('*')
-      .order('id', { ascending: true });
+    const { data } = await supabase.from('submissions').select('*').order('id', { ascending: true });
 
     if (data && data.length > 0) {
       const userGroup = {};
       data.forEach(sub => {
         const cleanName = (sub.char_id || '').trim();
         if (!cleanName) return;
-        if (!userGroup[cleanName]) {
-          userGroup[cleanName] = [];
-        }
+        if (!userGroup[cleanName]) userGroup[cleanName] = [];
         userGroup[cleanName].push(sub);
       });
 
@@ -139,7 +128,6 @@ export default function Home() {
         const currLv = Number(latest.level);
         const currExp = Number(latest.exp_val);
 
-        // 🎯 在這裡直接套用妳指定的完美跨等邏輯計算！
         const expGrowth = calculateTrueGrowth(baseLv, baseExp, currLv, currExp);
 
         return {
@@ -160,12 +148,7 @@ export default function Home() {
   async function fetchUserHistory(id) {
     if (!supabase) return;
     const cleanId = id.trim();
-    const { data } = await supabase
-      .from('submissions')
-      .select('*')
-      .eq('char_id', cleanId)
-      .order('id', { ascending: true });
-
+    const { data } = await supabase.from('submissions').select('*').eq('char_id', cleanId).order('id', { ascending: true });
     if (data) setHistory(data);
   }
 
@@ -246,7 +229,7 @@ export default function Home() {
     }
   }
 
-  // 📸 高清全圖分析 + 霸道填入 + 超級容錯日期
+  // 📸 高清全圖分析 + 角色名稱驗證 + 霸道填入 + 寬鬆日期
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -256,7 +239,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在全圖高清讀取截圖資料...');
+    setMsg('⚡ 正在全圖高清讀取截圖與辨識角色身份...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -280,7 +263,17 @@ export default function Home() {
             .replace(/[S]/g, '5')
             .replace(/[B]/g, '8');
 
-          // --- 1. 🎯 等級 (LV) 強制帶入 ---
+          // --- 1. 🎯 角色名稱 (Char ID) 嚴格防呆比對 ---
+          if (loggedInUser) {
+            const hasUserInImage = rawText.includes(loggedInUser) || cleanText.includes(loggedInUser) || rawText.toLowerCase().includes(loggedInUser.toLowerCase());
+            if (hasUserInImage) {
+              setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
+            } else {
+              setCharNotice(`⚠️ 警告：截圖內找不到目前登入的角色名稱【${loggedInUser}】！請確認是否上傳到別人的截圖，以免審核不通過。`);
+            }
+          }
+
+          // --- 2. 🎯 等級 (LV) 強制帶入 ---
           let detectedLv = '';
           const lvMatch = rawText.match(/(?:LV|Lv|L\/|LN)[\s\.:]*(\d{1,3})/i) || cleanText.match(/(?:LV|LV)[\s\.:]*(\d{1,3})/i);
           if (lvMatch && lvMatch[1]) {
@@ -291,7 +284,7 @@ export default function Home() {
           }
           if (detectedLv) setLevel(detectedLv);
 
-          // --- 2. 🎯 經驗值 (EXP) 強制帶入 ---
+          // --- 3. 🎯 經驗值 (EXP) 強制帶入 ---
           let detectedExp = '';
           const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i) || cleanText.match(/EXP[\s\.:]*([\d,.]+)/i);
           if (expMatch && expMatch[1]) {
@@ -305,7 +298,7 @@ export default function Home() {
           }
           if (detectedExp) setExpVal(detectedExp);
 
-          // --- 3. 🎯 超級寬鬆全圖日期判斷 ---
+          // --- 4. 🎯 超級寬鬆全圖日期判斷 ---
           const dateTargets = [
             `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
             `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
@@ -331,11 +324,7 @@ export default function Home() {
             setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
           }
 
-          if (loggedInUser) {
-            setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
-          }
-
-          setMsg('🎉 分析完成！已自動填入自動偵測到的 LV 與 EXP，如有少許偏差可直接修改修正。');
+          setMsg('🎉 分析完成！已自動填入 LV 與 EXP，請確認角色名稱與數字無誤後即可提交。');
         } else {
           setMsg('請檢查並確認等級與經驗值。');
         }
@@ -435,23 +424,23 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並計算活動經驗值成長量！
+              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並核對角色名稱！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全圖高清讀取截圖資料中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全圖高清讀取與核對角色名稱中...</p>}
             
-            {dateNotice && (
-              <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
-                {dateNotice}
+            {charNotice && (
+              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fef2f2', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fecdd3'), color: charNotice.includes('✅') ? '#15803d' : '#991b1b', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+                {charNotice}
               </div>
             )}
 
-            {charNotice && (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
-                {charNotice}
+            {dateNotice && (
+              <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+                {dateNotice}
               </div>
             )}
 
