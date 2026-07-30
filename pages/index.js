@@ -7,6 +7,10 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
+const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
+
+// 🍁 Artale 1~200 級每級所需經驗值對照表
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -25,6 +29,7 @@ function getCumulativeExp(lv) {
   return total;
 }
 
+// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -41,6 +46,7 @@ export default function Home() {
   const [charId, setCharId] = useState('');
   const [pin, setPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState('');
+  const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -48,6 +54,9 @@ export default function Home() {
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
+  
+  // 🔍 用來追蹤玩家是否手動修改過 OCR 自動帶入的數值
+  const [isManuallyEdited, setIsManuallyEdited] = useState(false);
   
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
@@ -57,13 +66,35 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [isEnded, setIsEnded] = useState(false);
+
   useEffect(() => {
     const savedUser = localStorage.getItem('artale_user');
     if (savedUser) {
       setLoggedInUser(savedUser);
       setIsLoggedIn(true);
       fetchUserHistory(savedUser);
+      fetchLeaderboard();
     }
+
+    const timer = setInterval(() => {
+      const now = new Date().getTime();
+      const difference = DEADLINE - now;
+
+      if (difference <= 0) {
+        setIsEnded(true);
+        clearInterval(timer);
+      } else {
+        const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+        setTimeLeft({ days, hours, minutes, seconds });
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, []);
 
   async function fetchLeaderboard() {
@@ -119,6 +150,12 @@ export default function Home() {
 
     if (data) {
       setHistory(data);
+      if (data.length > 0) {
+        setHasSubmitted(true);
+        fetchLeaderboard();
+      } else {
+        setHasSubmitted(false);
+      }
     }
   }
 
@@ -142,6 +179,7 @@ export default function Home() {
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
       setHasSubmitted(false);
+      fetchUserHistory(cleanId);
     } else {
       if (user.pin !== pin) {
         return setMsg('PIN 碼不正確！');
@@ -151,6 +189,7 @@ export default function Home() {
       localStorage.setItem('artale_user', cleanId);
       setIsLoggedIn(true);
       setHasSubmitted(false);
+      fetchUserHistory(cleanId);
     }
   }
 
@@ -165,8 +204,32 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
+  async function handleRename(e) {
+    e.preventDefault();
+    if (!supabase) return setMsg('Supabase 設定未完全');
+    const targetName = newCharIdInput.trim();
+    if (!targetName) return setMsg('請輸入新的角色名稱！');
+    if (targetName === loggedInUser) return setMsg('新名稱不能與舊名稱相同！');
+
+    const { data: existingUser } = await supabase.from('participants').select('*').eq('char_id', targetName).single();
+    if (existingUser) return setMsg(`⚠️ 改名失敗：角色 ID 【${targetName}】 已有人使用！`);
+
+    await supabase.from('participants').update({ char_id: targetName }).eq('char_id', loggedInUser);
+    await supabase.from('submissions').update({ char_id: targetName }).eq('char_id', loggedInUser);
+
+    const oldName = loggedInUser;
+    setLoggedInUser(targetName);
+    localStorage.setItem('artale_user', targetName);
+    setNewCharIdInput('');
+    setMsg(`🎉 改名成功！所有歷史成績已從【${oldName}】無縫轉移至【${targetName}】！`);
+    
+    fetchUserHistory(targetName);
+    fetchLeaderboard();
+  }
+
   async function handleUpdatePin(e) {
     e.preventDefault();
+    if (!supabase) return setMsg('Supabase 設定未完全');
     if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
 
     const { error } = await supabase
@@ -179,7 +242,7 @@ export default function Home() {
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
+      setMsg('密碼已成功修改為新密碼！');
     }
   }
 
@@ -212,6 +275,7 @@ export default function Home() {
     });
   }
 
+  // 📸 自動辨識 LV / EXP / 全畫面日期
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -219,11 +283,12 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('🔍 正在強力解析截圖與所有數字...');
+    setIsManuallyEdited(false); // 每次上傳新截圖時重置手動修改標記
+    setMsg('🔍 正在強力解析截圖內容...');
 
     const now = new Date();
-    const M = now.getMonth() + 1; // 7
-    const D = now.getDate();     // 31
+    const M = now.getMonth() + 1;
+    const D = now.getDate();
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -232,24 +297,20 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 🛠️ 印出整張圖被辨識出來的原始文字，讓妳可以在 F12 主控台（Console）看看到底抓到什麼
-        console.log("=== OCR 原始辨識文字 ===", text);
-
-        // 1. 🎯 精準辨識等級 (LV.)
+        // 1. 🎯 自動帶入等級 (Lv)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
         }
 
-        // 2. 🎯 精準辨識經驗值 (EXP.)
+        // 2. 🎯 自動帶入經驗值 (EXP)
         const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
         if (expMatch && expMatch[1]) {
           setExpVal(expMatch[1]);
         }
 
-        // 3. 🎯 強力寬鬆日期比對：只要畫面上有出現「月」、「日」、斜線、點，或剛好等於今日數字就直接給過！
+        // 3. 🎯 日期核對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
-        
         const mStr = String(M);
         const dStr = String(D);
         const mmStr = String(M).padStart(2, '0');
@@ -265,22 +326,19 @@ export default function Home() {
                                text.includes(`${M}.${D}`) || 
                                text.includes(`${M}-${D}`) ||
                                text.includes(`${M}月`) ||
-                               text.includes(`${D}日`) ||
-                               text.includes('7/31') ||
-                               text.includes('07/31');
+                               text.includes(`${D}日`);
 
         if (hasNumMatch || hasSymbolMatch) {
           setDateNotice(`✅ 成功在全畫面驗證今日日期標記（${M}/${D}）！`);
         } else {
-          // ⚠️ 如果還是沒抓到，直接把 OCR 辨識到的部分內容印在畫面提示上，方便我們排查
-          setDateNotice(`💡 系統未自動抓到 ${M}/${D}。若右下角確定有日期，管理員後台將人工審核放行！`);
+          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}），管理員後台會進行人工審核放行！`);
         }
 
         if (loggedInUser) {
           setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
 
-        setMsg('✨ 分析完成！請檢查帶入的數字，若有誤差可直接手動修改。');
+        setMsg('✨ 分析完成！已自動帶入數值，若有誤差可直接手動修改。');
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -291,6 +349,8 @@ export default function Home() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (isEnded) return setMsg('⏰ 活動已截止，無法再提交新成績！');
+    if (!supabase) return setMsg('Supabase 設定未完全');
     if (!file) return setMsg('請選擇截圖照片');
     if (!level || !expVal) return setMsg('請填寫或確認等級與經驗值');
     if (!loggedInUser) return setMsg('登入狀態異常，請重新登入');
@@ -302,29 +362,25 @@ export default function Home() {
       const fileExt = file.name.split('.').pop();
       const fileName = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`;
       
-      const { error: uploadError } = await supabase.storage
-        .from('screenshots')
-        .upload(fileName, file);
-
+      const { error: uploadError } = await supabase.storage.from('screenshots').upload(fileName, file);
       if (uploadError) throw uploadError;
 
-      const { data: publicUrlData } = supabase.storage
-        .from('screenshots')
-        .getPublicUrl(fileName);
-
+      const { data: publicUrlData } = supabase.storage.from('screenshots').getPublicUrl(fileName);
       const photoUrl = publicUrlData.publicUrl;
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
+      // 🛠️ 將「是否手動編輯過 (is_manually_edited)」直接寫入資料庫，供管理員審核辨識！
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
         exp_val: inputExpNum,
         total_exp: calculatedTotalExp,
         photo_url: photoUrl,
-        status: 'approved'
+        status: 'approved',
+        is_manually_edited: isManuallyEdited // 👈 關鍵審核標記
       }]);
 
       if (subError) throw subError;
@@ -347,7 +403,19 @@ export default function Home() {
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b' }}>🍁 Artale 夏日練等大賽</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale 夏日練等大賽</h1>
+
+      {/* ⏱️ 活動倒數計時橫幅 */}
+      <div style={{ background: isEnded ? '#fef2f2' : '#f0fdf4', border: '2px solid ' + (isEnded ? '#fecdd3' : '#bbf7d0'), padding: '12px 20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
+        <h3 style={{ margin: 0, color: isEnded ? '#dc2626' : '#15803d' }}>
+          {isEnded ? '⏰ 活動已於 9月8日 07:59 正式截止結算！' : '⏱️ 活動剩餘倒數時間（結算截止：9/8 07:59）'}
+        </h3>
+        {!isEnded && (
+          <p style={{ margin: '8px 0 0 0', fontSize: '18px', fontWeight: 'bold', color: '#0369a1' }}>
+            ⏳ {timeLeft.days} 天 {timeLeft.hours} 小時 {timeLeft.minutes} 分鐘 {timeLeft.seconds} 秒
+          </p>
+        )}
+      </div>
 
       {msg && <div style={{ background: '#3b82f6', color: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '15px', fontWeight: 'bold' }}>{msg}</div>}
 
@@ -360,6 +428,29 @@ export default function Home() {
         </form>
       ) : (
         <div>
+          {/* ⚙️ 第一次登入後，最上方即可修改 PIN 碼與改名 */}
+          <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
+            
+            {/* 修改 PIN 碼表單 (移至最上方) */}
+            <form onSubmit={handleUpdatePin} style={{ marginBottom: '15px' }}>
+              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔑 修改個人 4 位數 PIN 碼：</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
+              </div>
+            </form>
+
+            {/* 角色遊戲內改名 / 轉移數據 (位於修改 PIN 碼下方) */}
+            <form onSubmit={handleRename}>
+              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔄 角色遊戲內改名 / 轉移數據：</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input type="text" placeholder="輸入遊戲內的新角色 ID" value={newCharIdInput} onChange={e => setNewCharIdInput(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>確認改名</button>
+              </div>
+            </form>
+          </div>
+
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
@@ -369,13 +460,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖，系統會自動帶入 LV 與 EXP！若截圖日期字體過小無法被 AI 自動識別也沒關係，只要確保圖片右下角有日期，後台皆可正常提交並審核。
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動帶入等級與經驗值。若手動修改數值，系統將自動加上「手動編輯」標記供管理員審核！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
-            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
+            <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全畫面掃描截圖中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析截圖中的等級與經驗值...</p>}
             
             {dateNotice && (
               <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
@@ -390,29 +481,49 @@ export default function Home() {
             )}
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
-            <input type="number" placeholder="例如：173" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+            <input 
+              type="number" 
+              placeholder="例如：173" 
+              disabled={isEnded} 
+              value={level} 
+              onChange={e => { 
+                setLevel(e.target.value); 
+                setIsManuallyEdited(true); // 👈 偵測到手動修改等級
+              }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+            />
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
             <input 
               type="number" 
               placeholder="例如：246011374" 
+              disabled={isEnded}
               value={expVal} 
-              onChange={e => setExpVal(e.target.value)} 
+              onChange={e => { 
+                setExpVal(e.target.value); 
+                setIsManuallyEdited(true); // 👈 偵測到手動修改經驗值
+              }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
 
-            <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
-              {loading ? '提交中...' : '確認並提交成績'}
+            {isManuallyEdited && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '15px', fontWeight: 'bold' }}>
+                ⚠️ 偵測到您已手動修改數值，此筆提交將標記為「需人工審核」，管理員後台將特別檢視您的截圖。
+              </div>
+            )}
+
+            <button type="submit" disabled={loading || isEnded} style={{ padding: '12px 24px', background: isEnded ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: isEnded ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
+              {isEnded ? '🔒 活動已截止停用上傳' : loading ? '提交中...' : '確認並提交成績'}
             </button>
           </form>
 
-          {/* 📈 角色經驗值走勢圖 */}
+          {/* 📈 角色經驗值走勢圖與歷史明細表格 */}
           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢</h3>
+            <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢與歷史紀錄</h3>
             {history.length < 2 ? (
-              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
+              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '15px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
             ) : (
-              <div style={{ width: '100%', overflowX: 'auto' }}>
+              <div style={{ width: '100%', overflowX: 'auto', marginBottom: '20px' }}>
                 <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
                   {(() => {
                     const maxExp = Math.max(...history.map(h => h.total_exp || 0));
@@ -446,16 +557,52 @@ export default function Home() {
                 </svg>
               </div>
             )}
-          </div>
 
-          {/* 修改 PIN 碼表單 */}
-          <form onSubmit={handleUpdatePin} style={{ background: '#fff1f2', padding: '15px 20px', borderRadius: '12px', border: '1px solid #fecdd3', marginBottom: '30px' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#9f1239' }}>⚙️ 修改個人的 4 位數 PIN 碼</h4>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #fda4af' }} />
-              <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
-            </div>
-          </form>
+            {history.length > 0 && (
+              <div>
+                <h4 style={{ margin: '15px 0 10px 0', color: '#334155', fontSize: '15px' }}>📜 個人歷次回報明細（管理員後台可同步審核檢視截圖與數值）：</h4>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '8px' }}>次數</th>
+                        <th style={{ padding: '8px' }}>等級</th>
+                        <th style={{ padding: '8px' }}>經驗值 (EXP)</th>
+                        <th style={{ padding: '8px' }}>狀態 / 備註</th>
+                        <th style={{ padding: '8px' }}>截圖證明</th>
+                        <th style={{ padding: '8px' }}>回報時間</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((h, idx) => {
+                        const timeStr = h.created_at ? new Date(h.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間';
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px', fontWeight: 'bold' }}>#{idx + 1}</td>
+                            <td style={{ padding: '8px' }}>Lv.{h.level}</td>
+                            <td style={{ padding: '8px' }}>{Number(h.exp_val || 0).toLocaleString()}</td>
+                            <td style={{ padding: '8px' }}>
+                              {h.is_manually_edited ? (
+                                <span style={{ color: '#d97706', fontWeight: 'bold' }}>⚠️ 需人工審核 (手動修改)</span>
+                              ) : (
+                                <span style={{ color: '#16a34a' }}>✅ 自動辨識</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              {h.photo_url ? (
+                                <a href={h.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>查看截圖</a>
+                              ) : '無'}
+                            </td>
+                            <td style={{ padding: '8px', color: '#64748b' }}>{timeStr}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -463,48 +610,51 @@ export default function Home() {
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
-          <p style={{ margin: 0, fontSize: '15px' }}>請登入並<strong>完成一次截圖與成績提交</strong>，系統將為您即時解鎖練等大賽排行榜！</p>
+          <p style={{ margin: 0, fontSize: '15px' }}>請登入並<strong>完成當次截圖與成績提交</strong>，系統將為您即時解鎖練等大賽排行榜！</p>
         </div>
       ) : (
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
           <h2 style={{ color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginTop: 0 }}>🏆 練等大賽即時排行榜 (活動成長量排名)</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ padding: '12px 8px' }}>名次</th>
-                <th style={{ padding: '12px 8px' }}>角色名稱</th>
-                <th style={{ padding: '12px 8px' }}>當前等級</th>
-                <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
-                <th style={{ padding: '12px 8px' }}>當前對應獎品</th>
-                <th style={{ padding: '12px 8px' }}>最後更新時間</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.length === 0 ? (
-                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
-              ) : (
-                players.map((p, idx) => {
-                  const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
-                        {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
-                      </td>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
-                      <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
-                      <td style={{ padding: '12px 8px', color: '#16a34a', fontWeight: 'bold' }}>
-                        +{Number(p.growth_exp).toLocaleString()}
-                      </td>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', fontSize: '13px', color: '#0284c7' }}>
-                        {getPrizeBadge(idx)}
-                      </td>
-                      <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          
+          <div style={{ width: '100%', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ padding: '12px 8px' }}>名次</th>
+                  <th style={{ padding: '12px 8px' }}>角色名稱</th>
+                  <th style={{ padding: '12px 8px' }}>當前等級</th>
+                  <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
+                  <th style={{ padding: '12px 8px' }}>Data對應獎品</th>
+                  <th style={{ padding: '12px 8px' }}>最後更新時間</th>
+                </tr>
+              </thead>
+              <tbody>
+                {players.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
+                ) : (
+                  players.map((p, idx) => {
+                    const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
+                          {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                        </td>
+                        <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
+                        <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
+                        <td style={{ padding: '12px 8px', color: '#16a34a', fontWeight: 'bold' }}>
+                          +{Number(p.growth_exp).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '12px 8px', fontWeight: 'bold', fontSize: '13px', color: '#0284c7' }}>
+                          {getPrizeBadge(idx)}
+                        </td>
+                        <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
