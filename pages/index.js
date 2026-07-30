@@ -18,7 +18,7 @@ export default function Home() {
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
-  const [dateErr, setDateErr] = useState('');
+  const [dateNotice, setDateNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -31,11 +31,6 @@ export default function Home() {
       fetchUserHistory(charId);
     }
   }, [isLoggedIn, charId]);
-
-  function getTodayTaiwanStr() {
-    const now = new Date();
-    return now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' });
-  }
 
   async function fetchLeaderboard() {
     if (!supabase) return;
@@ -112,15 +107,15 @@ export default function Home() {
     }
   }
 
-  // 🚀 圖片壓縮工具（將大圖壓縮加速辨識）
-  function compressImageForOCR(file) {
+  // 🖼️ 適度壓縮圖片（保留 1400px 清晰度，確保右下角工作列與聊天室文字看得清）
+  function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 800; // 壓縮至 800px 以內
+          const maxDim = 1400; // 提高清晰度至 1400px
           let width = img.width;
           let height = img.height;
           if (width > height && width > maxDim) {
@@ -134,7 +129,7 @@ export default function Home() {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
         };
         img.src = e.target.result;
       };
@@ -142,48 +137,46 @@ export default function Home() {
     });
   }
 
-  // 📸 極速辨識圖片邏輯（附帶 6 秒超時）
+  // 📸 三種日期格式完整掃描 + 數字自動抓取
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setDateErr('');
-    setMsg('⚡ 快速辨識中...');
+    setDateNotice('');
+    setMsg('🔍 正在掃描截圖資訊...');
 
-    const todayStr = getTodayTaiwanStr();
-    const [month, day] = todayStr.split('/');
+    const now = new Date();
+    const YYYY = now.getFullYear();
+    const M = now.getMonth() + 1;
+    const D = now.getDate();
+    const MM = String(M).padStart(2, '0');
+    const DD = String(D).padStart(2, '0');
 
     try {
-      // 1. 先將大圖壓縮以大幅提高辨識速度
-      const compressedBase64 = await compressImageForOCR(selectedFile);
+      const ocrImage = await prepareImageForOCR(selectedFile);
 
-      // 2. 設置 6 秒超時機制
-      const ocrTask = async () => {
-        if (!window.Tesseract) return null;
-        return await window.Tesseract.recognize(compressedBase64, 'eng');
-      };
-
-      const timeoutTask = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 6000)
-      );
-
-      // 競速：看是 OCR 先完成還是 6 秒超時
-      const result = await Promise.race([ocrTask(), timeoutTask]);
-
-      if (result && result.data) {
+      if (window.Tesseract) {
+        const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 日期比對
-        const monthPattern = month.padStart(2, '0') + '|' + month;
-        const dayPattern = day.padStart(2, '0') + '|' + day;
-        const dateRegex = new RegExp(`(${monthPattern})[/\\-.月](${dayPattern})`, 'i');
+        // 🎯 三種日期格式正規化比對：
+        // 1. 全西元 (如 2026/7/30, 2026-07-30, 2026.7.30)
+        const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
+        // 2. 簡短月/日 (如 7/30, 07/30, 7-30)
+        const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
+        // 3. 中文月/日 (如 7月30日, 07月30)
+        const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
 
-        if (!dateRegex.test(text)) {
-          setDateErr(`⚠️ 日期警告：自動掃描未發現今日日期（${todayStr}），管理員審核時若非今日截圖將予以剔除。`);
+        const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text);
+
+        if (hasDateMatch) {
+          setDateNotice(`✅ 成功驗證截圖含今日日期（${YYYY}/${M}/${D}）！`);
+        } else {
+          setDateNotice(`💡 系統未自動偵測到今日日期，別擔心！只要截圖有帶右下角時間或日期，管理員後台會人工審核通過。`);
         }
 
-        // 抓取數字
+        // 自動帶入等級與經驗值
         const numbers = text.match(/\d+/g);
         if (numbers && numbers.length > 0) {
           const possibleLv = numbers.find(n => Number(n) >= 1 && Number(n) <= 300);
@@ -192,17 +185,13 @@ export default function Home() {
           if (possibleLv) setLevel(possibleLv);
           if (possibleExp) setExpVal(possibleExp);
 
-          setMsg('✨ 自動帶入完成！若數字有誤請手動微調。');
+          setMsg('✨ 自動解析完成！若數字有誤差請手動校正。');
         } else {
-          setMsg('圖片已選擇！請手動填寫等級與經驗值。');
+          setMsg('圖片已選擇！請手動確認填寫等級與經驗值。');
         }
       }
     } catch (err) {
-      if (err.message === 'TIMEOUT') {
-        setMsg('⏱️ 自動辨識超時，請直接手動輸入等級與經驗值。');
-      } else {
-        setMsg('圖片已選擇，請手動填寫等級與經驗值。');
-      }
+      setMsg('圖片已選擇，請手動確認等級與經驗值。');
     } finally {
       setScanning(false);
     }
@@ -279,17 +268,17 @@ export default function Home() {
             <h3>📸 回報等級與截圖 (目前登入：<span style={{ color: '#2563eb' }}>{charId}</span>)</h3>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖，系統會試著自動帶入數字。若辨識較慢或有誤，請直接手動輸入。
+              💡 <strong>操作說明：</strong>選擇今日遊戲截圖後，系統會自動比對時間並帶入數據。若有誤差請手動校正。
             </div>
 
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳今日證明截圖：</label>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在快速掃描圖片中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在分析圖片中...</p>}
             
-            {dateErr && (
-              <div style={{ background: '#fffbebfb', border: '1px solid #fef08a', color: '#b45309', padding: '10px', borderRadius: '6px', fontSize: '14px', margin: '10px 0' }}>
-                {dateErr}
+            {dateNotice && (
+              <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '10px', borderRadius: '6px', fontSize: '14px', margin: '10px 0' }}>
+                {dateNotice}
               </div>
             )}
 
