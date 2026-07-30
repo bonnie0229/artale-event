@@ -7,10 +7,10 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)[cite: 1]
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
-// 🍁 根據精準規則自動生成 1~200 級經驗值對照表（120等基準 + 1.05倍）
+// 🍁 根據精準規則自動生成 1~200 級經驗值對照表（120等基準 + 1.05倍）[cite: 1]
 function getExpRequiredForLevel(lv) {
   if (lv <= 0) return 0;
   if (lv === 120) return 29715818;
@@ -33,7 +33,7 @@ for (let i = 0; i <= 200; i++) {
   REAL_EXP_TABLE[i] = getExpRequiredForLevel(i);
 }
 
-// 🌟 精準跨等成長計算邏輯
+// 🌟 精準跨等成長計算邏輯[cite: 1]
 function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
   if (currLv === baseLv) {
     return currExp - baseExp;
@@ -55,7 +55,7 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 完整正式獎勵標籤
+// 🎁 完整正式獎勵標籤[cite: 1]
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -244,7 +244,7 @@ export default function Home() {
     }
   }
 
-  // 📸 Canvas 圖片放大預處理（保持像素銳利）
+  // 📸 Canvas 圖片放大預處理（保持像素銳利）[cite: 1]
   async function preprocessAndScaleImage(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -278,7 +278,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在進行安全掃描與數據解析...');
+    setMsg('⚡ 正在進行防作弊與數據解析...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -291,15 +291,24 @@ export default function Home() {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
-        // 使用純英文辨識，維持抓取數字的穩定性
-        const result = await window.Tesseract.recognize(processedImageUrl, 'eng');
+        // 🔐 啟用雙語辨識 (chi_tra + eng) 確保抓取中文名字與數字[cite: 1]
+        const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
         const rawText = result.data.text || '';
         const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
+        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        // --- 1. 🎯 角色名稱防作弊比對 (純英文環境下交由幹部審核) ---
-        setCharNotice(`💡 提醒：由於角色為中文名稱【${loggedInUser}】，截圖防作弊將交由幹部後台人工審核。`);
+        console.log("OCR 辨識原始文字：", rawText);
 
-        // --- 2. 🎯 等級 (Lv) 抓取 ---
+        // --- 1. 🎯 角色名稱防作弊比對[cite: 1] ---
+        if (loggedInUser) {
+          if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
+            setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
+          } else {
+            setCharNotice(`⚠️ 提醒：截圖中未直接讀取到【${loggedInUser}】，將交由後台審核。`);
+          }
+        }
+
+        // --- 2. 🎯 等級 (Lv) 抓取[cite: 1] ---
         let detectedLv = '';
         const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
 
@@ -319,7 +328,7 @@ export default function Home() {
         }
         if (detectedLv) setLevel(detectedLv);
 
-        // --- 3. 🎯 經驗值 (EXP) 抓取 ---
+        // --- 3. 🎯 經驗值 (EXP) 抓取[cite: 1] ---
         let detectedExp = '';
         const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || cleanRaw.match(/exp\[?(\d{5,12})/i);
         if (expMatch && expMatch[1]) {
@@ -333,7 +342,7 @@ export default function Home() {
         }
         if (detectedExp) setExpVal(detectedExp);
 
-        // --- 4. 🎯 日期核對 ---
+        // --- 4. 🎯 日期核對[cite: 1] ---
         const dateTargets = [
           `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
           `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
@@ -354,7 +363,7 @@ export default function Home() {
           setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
         }
 
-        setMsg('🎉 掃描完成！請確認自動代入的數值，無誤後即可提交！');
+        setMsg('🎉 掃描完成！請確認自動代入的數值，若有誤差可直接手動修正。');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
@@ -451,13 +460,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將自動讀取等級與經驗值！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將進行防作弊中文角色檢測、等級與經驗值自動抓取！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行安全掃描與數據解析...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行繁體中文與數據解析...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
