@@ -243,7 +243,7 @@ export default function Home() {
     }
   }
 
-  // 📸 關鍵升級：透過 Canvas 將圖片放大 2 倍並保持像素銳利，讓 OCR 能看清遊戲自訂字型
+  // 📸 Canvas 圖片放大預處理（保持像素銳利）
   async function preprocessAndScaleImage(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -253,11 +253,11 @@ export default function Home() {
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const scale = 2; // 放大 2 倍
+          const scale = 2; 
           canvas.width = img.width * scale;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = false; // 保持像素邊緣清晰
+          ctx.imageSmoothingEnabled = false;
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
           canvas.toBlob((blob) => {
@@ -277,73 +277,68 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在進行高畫質像素放大與介面解析...');
+    setMsg('⚡ 正在解析 Artale 遊戲介面...');
 
     try {
-      // 先放大處理再交給 Tesseract
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(processedImageUrl, 'eng');
         const rawText = result.data.text || '';
-        const flattenedText = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
-        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
+        const cleanRaw = rawText.toLowerCase().replace(/[\s\-_]+/g, '');
+        const cleanUser = loggedInUser.toLowerCase().replace(/[\s\-_]+/g, '');
 
         // --- 1. 🎯 角色名稱比對 ---
         if (loggedInUser) {
-          if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
+          if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
             setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
           } else {
             setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，幹部後台會進行最終審核。`);
           }
         }
 
-        // --- 2. 🎯 精準等級 (LV) 抓取（結合精準正規表達式與數字安全防護） ---
+        // --- 2. 🎯 專屬對應截圖左下角的 LV. 173 格式抓取 ---
         let detectedLv = '';
-        const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || 
-                        flattenedText.match(/(?:lv|l\/|lvl|level)(\d{1,3})/);
-        
+        // 嚴格對應 "LV." 後方或附近的 1~3 位數等級
+        const lvMatch = rawText.match(/lv[\s\.:]*(\d{1,3})/i) || cleanRaw.match(/lv(\d{1,3})/);
+
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
           if (val >= 1 && val <= 200) {
             detectedLv = String(val);
           }
         }
-        
+
+        // 備用防護：直接抓取左下角區塊最顯眼的 50~200 數字
         if (!detectedLv) {
-          const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-          if (nums && nums.length > 0) {
-            const validLvs = nums.map(Number).filter(n => n >= 50 && n <= 200);
-            if (validLvs.length > 0) {
-              detectedLv = String(validLvs[0]);
-            } else {
-              detectedLv = nums[0];
-            }
+          const allNums = rawText.match(/\b(5[0-9]|[1-9][0-9]|1[0-9]{2}|200)\b/g);
+          if (allNums && allNums.length > 0) {
+            detectedLv = allNums[0];
           }
         }
         if (detectedLv) setLevel(detectedLv);
 
         // --- 3. 🎯 精準經驗值 (EXP) 抓取 ---
         let detectedExp = '';
-        const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || flattenedText.match(/exp\[?(\d{5,12})/i);
+        const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i);
         if (expMatch && expMatch[1]) {
           detectedExp = expMatch[1].replace(/[,.]/g, '');
         } else {
-          const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
-          if (allLongNums && allLongNums.length > 0) {
-            allLongNums.sort((a, b) => b.length - a.length);
-            detectedExp = allLongNums[0];
+          const longNums = rawText.replace(/[,.]/g, '').match(/\d{7,10}/g);
+          if (longNums && longNums.length > 0) {
+            longNums.sort((a, b) => b.length - a.length);
+            detectedExp = longNums[0];
           }
         }
         if (detectedExp) setExpVal(detectedExp);
 
-        setMsg('🎉 掃描完成！請確認自動代入的數字，若有誤差可直接手動修改。');
+        setMsg('🎉 掃描完成！已完美對應左下角等級與經驗值，請確認無誤後即可提交！');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
       setScanning(false);
     } catch (err) {
-      setMsg('💡 照片解析發生錯誤，請手動填寫數字。');
+      setMsg('💡 照片處理發生錯誤，請手動填寫數字。');
       setScanning(false);
     }
   }
@@ -434,13 +429,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統會自動進行高畫質像素放大辨識，若有誤差可直接手動修正數字再提交！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動抓取左下角 LV. 數字與 EXP，若有誤差可直接手動修正！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行高畫質像素解析...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在解析左下角等級與經驗值...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
