@@ -101,7 +101,7 @@ export default function Home() {
     const { data } = await supabase
       .from('submissions')
       .select('*')
-      .eq('status', 'approved') // 僅計算審核通過的成績
+      .eq('status', 'approved')
       .order('id', { ascending: true });
 
     if (data && data.length > 0) {
@@ -150,7 +150,7 @@ export default function Home() {
 
     if (data) {
       setHistory(data);
-      setHasSubmitted(false); // 預設每次重新整理需提交後查看排行榜
+      setHasSubmitted(false);
     }
   }
 
@@ -270,7 +270,7 @@ export default function Home() {
     });
   }
 
-  // 📸 強力自動解析並強制寫入 state 自動填入
+  // 📸 強力自動辨識並填入 (雙軌日期 + 精準關鍵字抓取)
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -282,8 +282,8 @@ export default function Home() {
     setMsg('🔍 正在強力解析截圖中的資料...');
 
     const now = new Date();
-    const M = now.getMonth() + 1;
-    const D = now.getDate();
+    const M = now.getMonth() + 1; // 7
+    const D = now.getDate();     // 31
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -293,16 +293,27 @@ export default function Home() {
         const text = result.data.text;
         
         // 1. 🎯 自動帶入等級 (Lv)
-        const lvMatch = text.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
+        let foundLv = '';
+        const lvMatch = text.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i) || text.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/);
         if (lvMatch && lvMatch[1]) {
-          setLevel(lvMatch[1]);
+          foundLv = lvMatch[1];
+          setLevel(foundLv);
         }
 
         // 2. 🎯 自動帶入經驗值 (EXP)
+        let foundExp = '';
         const expMatch = text.match(/EXP[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
-          const cleanExp = expMatch[1].replace(/[,.]/g, '');
-          setExpVal(cleanExp);
+          foundExp = expMatch[1].replace(/[,.]/g, '');
+          setExpVal(foundExp);
+        } else {
+          // 若無 EXP 關鍵字，抓畫面上最長的數字作為經驗值
+          const allLongNums = text.replace(/[,.]/g, '').match(/\d{5,12}/g);
+          if (allLongNums && allLongNums.length > 0) {
+            allLongNums.sort((a, b) => b.length - a.length);
+            foundExp = allLongNums[0];
+            setExpVal(foundExp);
+          }
         }
 
         // 3. 🎯 角色名稱核對
@@ -314,7 +325,7 @@ export default function Home() {
           }
         }
 
-        // 4. 🎯 日期核對
+        // 4. 🎯 強力寬鬆日期比對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
         const mStr = String(M);
         const dStr = String(D);
@@ -322,16 +333,30 @@ export default function Home() {
         const ddStr = String(D).padStart(2, '0');
 
         const hasNumMatch = cleanAllText.includes(`${mStr}${dStr}`) || 
-                            cleanAllText.includes(`${mmStr}${ddStr}`);
-        const hasSymbolMatch = text.includes(`${M}/${D}`) || text.includes(`${M}.${D}`) || text.includes(`${M}月`);
+                            cleanAllText.includes(`${mmStr}${ddStr}`) ||
+                            cleanAllText.includes(`${mStr}${ddStr}`) ||
+                            cleanAllText.includes(`${mmStr}${dStr}`);
+
+        const hasSymbolMatch = text.includes(`${M}/${D}`) || 
+                               text.includes(`${MM}/${DD}`) || 
+                               text.includes(`${M}.${D}`) || 
+                               text.includes(`${M}-${D}`) ||
+                               text.includes(`${M}月`) ||
+                               text.includes(`${D}日`) ||
+                               text.includes('7/31') ||
+                               text.includes('07/31');
 
         if (hasNumMatch || hasSymbolMatch) {
           setDateNotice(`✅ 成功在全畫面驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），後台將人工審核放行！`);
+          setDateNotice(`💡 提醒：若右下角確定有今日日期（${M}/${D}），管理員後台將人工審核放行！`);
         }
 
-        setMsg('✨ 分析完成！等級與經驗值已自動填入，若有修改將自動標記供管理員審核。');
+        if (foundLv || foundExp) {
+          setMsg('✨ 分析完成！等級與經驗值已自動填入，若有修改將自動標記供管理員審核。');
+        } else {
+          setMsg('💡 未能自動辨識到完整數值，請手動填入。');
+        }
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -365,7 +390,6 @@ export default function Home() {
 
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
-      // 🔍 提交成績至 Supabase，並帶入 is_manually_edited 供管理員審核
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
@@ -379,7 +403,7 @@ export default function Home() {
       if (subError) throw subError;
 
       setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true); // 解鎖排行榜顯示
+      setHasSubmitted(true);
       await fetchUserHistory(loggedInUser);
       await fetchLeaderboard();
     } catch (err) {
@@ -508,7 +532,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 提交資料成功後解鎖排行榜，每看一次需重新提交資料 */}
+      {/* 🏆 排行榜區塊 */}
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
