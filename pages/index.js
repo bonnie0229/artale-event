@@ -75,7 +75,7 @@ export default function Home() {
   const [newCharIdInput, setNewCharIdInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false); // 必須上傳才能解鎖排行榜
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
@@ -243,7 +243,7 @@ export default function Home() {
     }
   }
 
-  // 📸 超級精準等級與經驗值 OCR 掃描
+  // 📸 強化版 OCR 掃描：提升名稱與高等級辨識精準度
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -270,39 +270,35 @@ export default function Home() {
         if (window.Tesseract) {
           const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
           const rawText = result.data.text || '';
-          const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
-          const cleanUser = loggedInUser.replace(/\s+/g, '').toLowerCase();
+          const flattenedText = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
+          const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-          // --- 1. 🎯 角色名稱柔性提示比對 ---
+          // --- 1. 🎯 強化版角色名稱模糊比對 ---
           if (loggedInUser) {
             if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
               setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
             } else {
-              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，請確認截圖正確，幹部後台會進行最終審核。`);
+              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】（Tesseract 容易漏字），請確認截圖正確，幹部後台會進行最終審核。`);
             }
           }
 
-          // --- 2. 🎯 超強等級 (LV) 智慧抓取 (優先抓 Lv 關鍵字，次選高段位數字) ---
+          // --- 2. 🎯 強化版高等級 (LV) 智慧抓取 ---
           let detectedLv = '';
-          const lvRegex = /(?:lv|l\/|l\.|lvl|level)[\s\.:]*(\d{1,3})/i;
-          const matchLv = rawText.match(lvRegex);
-          if (matchLv && matchLv[1]) {
-            detectedLv = matchLv[1];
+          // 支援各種常見的 Lv 標籤寫法與空格變體
+          const lvMatch = rawText.match(/(?:l\s*v|l\s*\/|l\s*\.|l\s*v\s*l|level)[\s\.:]*(\d{1,3})/i) || 
+                          flattenedText.match(/(?:lv|l\/|lvl|level)(\d{1,3})/);
+          
+          if (lvMatch && lvMatch[1]) {
+            detectedLv = lvMatch[1];
           } else {
-            const flatLvMatch = flattenedText.match(/(?:lv|l\/|l\.|lvl|level)(\d{1,3})/);
-            if (flatLvMatch && flatLvMatch[1]) {
-              detectedLv = flatLvMatch[1];
-            } else {
-              // 從畫面中抓出所有 1~200 的數字
-              const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-              if (nums && nums.length > 0) {
-                // 優先過濾掉太小的數字（排除血量、小代號），尋找大於等於 50 的高等級數字
-                const highNums = nums.map(Number).filter(n => n >= 50 && n <= 200);
-                if (highNums.length > 0) {
-                  detectedLv = String(highNums[0]);
-                } else {
-                  detectedLv = nums[0];
-                }
+            // 如果沒抓到關鍵字，從所有數字中挑選最符合高等級範圍 (50 ~ 200) 的數字
+            const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+            if (nums && nums.length > 0) {
+              const validLvs = nums.map(Number).filter(n => n >= 50 && n <= 200);
+              if (validLvs.length > 0) {
+                detectedLv = String(validLvs[0]);
+              } else {
+                detectedLv = nums[0];
               }
             }
           }
