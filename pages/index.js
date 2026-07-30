@@ -246,7 +246,7 @@ export default function Home() {
     }
   }
 
-  // 📸 超級容錯辨識：自動消除文字空格與斷行
+  // 📸 超級容錯辨識：支援繁體中文與英文混合辨識，自動消除空白與斷行
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -256,7 +256,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在全圖高清讀取截圖與辨識角色身份...');
+    setMsg('⚡ 正在全圖高清讀取截圖與辨識角色身份（支援繁體中文與英文）...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -271,7 +271,8 @@ export default function Home() {
         const imageDataUrl = event.target.result;
 
         if (window.Tesseract) {
-          const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
+          // 💡 關鍵修正：將語系改為 'chi_tra+eng'（繁體中文 + 英文），才能正確識別中文角色名稱！
+          const result = await window.Tesseract.recognize(imageDataUrl, 'chi_tra+eng');
           const rawText = result.data.text || '';
 
           const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
@@ -279,7 +280,7 @@ export default function Home() {
 
           // --- 1. 🎯 角色名稱寬鬆比對 ---
           if (loggedInUser) {
-            if (flattenedText.includes(cleanUser)) {
+            if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
               setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
             } else {
               setCharNotice(`⚠️ 警告：截圖內找不到目前登入的角色名稱【${loggedInUser}】！請確認是否上傳到別人的截圖。`);
