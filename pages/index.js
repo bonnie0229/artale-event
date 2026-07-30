@@ -26,7 +26,7 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 iDotCat 夏日練等大賽正式獎品清單比對
+// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -45,7 +45,7 @@ export default function Home() {
   const [loggedInUser, setLoggedInUser] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false); // 🔒 預設未提交，隱藏排行榜
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
@@ -55,6 +55,7 @@ export default function Home() {
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
   const [dateNotice, setDateNotice] = useState('');
+  const [charNotice, setCharNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -191,7 +192,7 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1600;
+          const maxDim = 1800; // 保持高清晰度
           let width = img.width;
           let height = img.height;
           if (width > height && width > maxDim) {
@@ -205,7 +206,7 @@ export default function Home() {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.9));
+          resolve(canvas.toDataURL('image/jpeg', 0.92));
         };
         img.src = e.target.result;
       };
@@ -213,13 +214,15 @@ export default function Home() {
     });
   }
 
+  // 📸 精準 UI 標籤導向辨識 (LV. / EXP. / 全區日期 / 角色名稱比對)
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
     setDateNotice('');
-    setMsg('🔍 正在辨識截圖內容...');
+    setCharNotice('');
+    setMsg('🔍 正在精準分析截圖內容...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -238,6 +241,19 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
+        // 1. 🎯 精準辨識等級 (搜尋 LV. 或 LV 後面的數字)
+        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
+        if (lvMatch && lvMatch[1]) {
+          setLevel(lvMatch[1]);
+        }
+
+        // 2. 🎯 精準辨識經驗值 (搜尋 EXP. 或 EXP 後面的數字)
+        const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
+        if (expMatch && expMatch[1]) {
+          setExpVal(expMatch[1]);
+        }
+
+        // 3. 🎯 全畫面日期檢驗 (工作列、頻道、聊天室等任何位置)
         const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
         const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
         const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
@@ -246,23 +262,21 @@ export default function Home() {
         const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text) || pattern4.test(text);
 
         if (hasDateMatch) {
-          setDateNotice(`✅ 成功辨識今日日期標記（${M}/${D} 或 ${mmddStr}）！`);
+          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工審核。`);
+          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行審核。`);
         }
 
-        const numbers = text.match(/\d+/g);
-        if (numbers && numbers.length > 0) {
-          const possibleLv = numbers.find(n => Number(n) >= 1 && Number(n) <= 300);
-          const possibleExp = numbers.find(n => n.length >= 4);
-
-          if (possibleLv) setLevel(possibleLv);
-          if (possibleExp) setExpVal(possibleExp);
-
-          setMsg('✨ 自動帶入完成！若數字有偏差請手動修改。');
-        } else {
-          setMsg('圖片已選擇！請手動確認填寫等級與經驗值。');
+        // 4. 🎯 角色名稱比對
+        if (loggedInUser) {
+          if (text.includes(loggedInUser)) {
+            setCharNotice(`✅ 已確認截圖包含角色名稱：${loggedInUser}`);
+          } else {
+            setCharNotice(`⚠️ 提示：系統未在文字中完全匹配到角色 ID【${loggedInUser}】，請確認是否為本人當前角色截圖。`);
+          }
         }
+
+        setMsg('✨ 分析完成！請檢查自動帶入的數字，若有偏差可直接手動修改。');
       }
     } catch (err) {
       setMsg('圖片已選擇，請手動確認等級與經驗值。');
@@ -298,7 +312,6 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      // 精準總經驗值計算
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
       const { error: subError } = await supabase.from('submissions').insert([{
@@ -313,7 +326,7 @@ export default function Home() {
       if (subError) throw subError;
 
       setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true); // 🔓 正式解鎖排行榜！
+      setHasSubmitted(true);
       fetchLeaderboard();
       fetchUserHistory(loggedInUser);
     } catch (err) {
@@ -353,7 +366,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>選擇今日截圖（含右下角時間或日期格式如 0730、7/30）上傳，即可解鎖即時排行榜並計算累積成長經驗！
+              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並計算活動經驗值成長量！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
@@ -362,8 +375,14 @@ export default function Home() {
             {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在分析圖片中...</p>}
             
             {dateNotice && (
-              <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '10px', borderRadius: '6px', fontSize: '14px', margin: '10px 0' }}>
+              <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {dateNotice}
+              </div>
+            )}
+
+            {charNotice && (
+              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fff1f2', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fecdd3'), color: charNotice.includes('✅') ? '#15803d' : '#be123c', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+                {charNotice}
               </div>
             )}
 
@@ -437,7 +456,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 排行榜區塊 (僅限成功提交成績後解鎖) */}
+      {/* 🏆 排行榜區塊 */}
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
