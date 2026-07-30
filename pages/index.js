@@ -239,11 +239,11 @@ export default function Home() {
     } else {
       setPin(newPin);
       setNewPin('');
-      setMsg('密碼已成功修改為新密碼！');
+      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
     }
   }
 
-  // 📸 最佳化行解析 OCR 掃描：穩健過濾與抓取等級和經驗值
+  // 📸 針對 Artale 介面（EXP [數值] 與 LV 框）客製化精準 OCR 掃描
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -253,7 +253,14 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在精準解析截圖數據...');
+    setMsg('⚡ 正在對應 Artale 介面格式讀取等級與經驗值...');
+
+    const now = new Date();
+    const YYYY = now.getFullYear();
+    const M = now.getMonth() + 1;
+    const D = now.getDate();
+    const MM = String(M).padStart(2, '0');
+    const DD = String(D).padStart(2, '0');
 
     try {
       const reader = new FileReader();
@@ -266,59 +273,72 @@ export default function Home() {
           const flattenedText = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
           const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-          // --- 1. 角色名稱比對 ---
+          // --- 1. 🎯 角色名稱比對 ---
           if (loggedInUser) {
             if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
               setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
             } else {
-              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，幹部後台會進行最終審核。`);
+              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，請確認截圖正確，幹部後台會進行最終審核。`);
             }
           }
 
-          // --- 2. 穩健等級解析 ---
+          // --- 2. 🎯 精準等級 (LV) 抓取 (特別針對 Artale 橘色 LV 框) ---
           let detectedLv = '';
-          let detectedExp = '';
-          const lines = rawText.split('\n');
-
-          for (let line of lines) {
-            const lowerLine = line.toLowerCase();
-            // 尋找包含 lv 或類似標籤的行
-            if (lowerLine.includes('lv') || lowerLine.includes('l.') || lowerLine.includes('l/')) {
-              const nums = line.match(/\d+/g);
-              if (nums && nums.length > 0) {
-                const valid = nums.map(Number).find(n => n >= 10 && n <= 200);
-                if (valid) detectedLv = String(valid);
-              }
-            }
-            // 尋找包含 exp 的行
-            if (lowerLine.includes('exp')) {
-              const expMatch = line.match(/\d{6,12}/);
-              if (expMatch) {
-                detectedExp = expMatch[0];
+          const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || 
+                          flattenedText.match(/(?:lv|l\/|lvl|level)(\d{1,3})/);
+          
+          if (lvMatch && lvMatch[1]) {
+            detectedLv = lvMatch[1];
+          } else {
+            // 從所有數字中過濾出高等級 (50 ~ 200)
+            const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
+            if (nums && nums.length > 0) {
+              const validLvs = nums.map(Number).filter(n => n >= 50 && n <= 200);
+              if (validLvs.length > 0) {
+                detectedLv = String(validLvs[0]);
+              } else {
+                detectedLv = nums[0];
               }
             }
           }
-
-          // 備用防護：若行解析未命中，透過全域尋找
-          if (!detectedLv) {
-            const allNums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
-            if (allNums && allNums.length > 0) {
-              const highLvs = allNums.map(Number).filter(n => n >= 100 && n <= 200);
-              detectedLv = highLvs.length > 0 ? String(highLvs[0]) : allNums[0];
-            }
-          }
-
-          if (!detectedExp) {
-            const longNums = rawText.replace(/[,.]/g, '').match(/\d{7,10}/g);
-            if (longNums && longNums.length > 0) {
-              detectedExp = longNums[0];
-            }
-          }
-
           if (detectedLv) setLevel(detectedLv);
+
+          // --- 3. 🎯 精準經驗值 (EXP) 抓取 (支援 Artale 的 EXP [數字] 格式) ---
+          let detectedExp = '';
+          const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || flattenedText.match(/exp\[?(\d{5,12})/i);
+          if (expMatch && expMatch[1]) {
+            detectedExp = expMatch[1].replace(/[,.]/g, '');
+          } else {
+            const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
+            if (allLongNums && allLongNums.length > 0) {
+              allLongNums.sort((a, b) => b.length - a.length);
+              detectedExp = allLongNums[0];
+            }
+          }
           if (detectedExp) setExpVal(detectedExp);
 
-          setMsg('🎉 掃描完成！請確認自動代入的數字，若有誤差可直接修改。');
+          // --- 4. 🎯 日期核對 ---
+          const dateTargets = [
+            `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
+            `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
+            `${MM}${DD}`, `${YYYY}${MM}${DD}`
+          ];
+
+          let hasDate = false;
+          for (let str of dateTargets) {
+            if (rawText.includes(str) || flattenedText.includes(str.replace(/\s+/g, '').toLowerCase())) {
+              hasDate = true;
+              break;
+            }
+          }
+
+          if (hasDate) {
+            setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
+          } else {
+            setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
+          }
+
+          setMsg('🎉 分析完成！已自動對應介面填入 LV 與 EXP，請確認無誤後即可提交！');
         } else {
           setMsg('請手動填寫等級與經驗值。');
         }
@@ -327,7 +347,7 @@ export default function Home() {
 
       reader.readAsDataURL(selectedFile);
     } catch (err) {
-      setMsg('💡 照片已選擇，請手動填寫數字。');
+      setMsg('💡 照片已選擇，請手動確認數字。');
       setScanning(false);
     }
   }
@@ -418,13 +438,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統會自動辨識，若有誤差可直接手動修正數字再提交！
+              💡 <strong>操作說明：</strong>上傳今日截圖，系統將自動為您讀取當前等級與經驗值數字！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在讀取截圖中的數據...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全速讀取截圖中的數據...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
