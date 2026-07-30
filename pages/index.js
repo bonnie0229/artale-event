@@ -12,6 +12,7 @@ export default function Home() {
   const [pin, setPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
@@ -23,30 +24,49 @@ export default function Home() {
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
-    fetchLeaderboard();
-  }, []);
-
-  useEffect(() => {
     if (isLoggedIn && charId) {
       fetchUserHistory(charId);
     }
   }, [isLoggedIn, charId]);
 
+  // 🏆 抓取所有提交紀錄，計算每個人的「活動成長總經驗值」
   async function fetchLeaderboard() {
     if (!supabase) return;
     const { data } = await supabase
       .from('submissions')
       .select('*')
-      .order('total_exp', { ascending: false });
+      .order('id', { ascending: true }); // 按時間序從舊到新
 
-    if (data) {
-      const latestMap = {};
+    if (data && data.length > 0) {
+      const userGroup = {};
       data.forEach(sub => {
-        if (!latestMap[sub.char_id] || sub.id > latestMap[sub.char_id].id) {
-          latestMap[sub.char_id] = sub;
+        if (!userGroup[sub.char_id]) {
+          userGroup[sub.char_id] = [];
         }
+        userGroup[sub.char_id].push(sub);
       });
-      const list = Object.values(latestMap).sort((a, b) => b.total_exp - a.total_exp);
+
+      const list = Object.keys(userGroup).map(id => {
+        const subs = userGroup[id];
+        const baseline = subs[0]; // 活動第一次提交（基準）
+        const latest = subs[subs.length - 1]; // 最新提交
+
+        const baselineTotal = Number(baseline.total_exp) || 0;
+        const latestTotal = Number(latest.total_exp) || 0;
+        const expGrowth = latestTotal - baselineTotal;
+
+        return {
+          char_id: id,
+          level: latest.level,
+          exp_val: latest.exp_val,
+          growth_exp: expGrowth >= 0 ? expGrowth : 0,
+          created_at: latest.created_at,
+          submission_count: subs.length
+        };
+      });
+
+      // 依「成長經驗值」從高到低排序
+      list.sort((a, b) => b.growth_exp - a.growth_exp);
       setPlayers(list);
     }
   }
@@ -61,6 +81,10 @@ export default function Home() {
 
     if (data) {
       setHistory(data);
+      if (data.length > 0) {
+        setHasSubmitted(true); // 玩家有提交過照片，允許看排行榜
+        fetchLeaderboard();
+      }
     }
   }
 
@@ -107,7 +131,6 @@ export default function Home() {
     }
   }
 
-  // 🖼️ 適度壓縮圖片（保留 1400px 清晰度，確保右下角工作列與聊天室文字看得清）
   function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -115,7 +138,7 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1400; // 提高清晰度至 1400px
+          const maxDim = 1600;
           let width = img.width;
           let height = img.height;
           if (width > height && width > maxDim) {
@@ -137,14 +160,14 @@ export default function Home() {
     });
   }
 
-  // 📸 三種日期格式完整掃描 + 數字自動抓取
+  // 📸 日期掃描（包含 0730、7/30、7月30日 等各式組合）
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
     setDateNotice('');
-    setMsg('🔍 正在掃描截圖資訊...');
+    setMsg('🔍 正在辨識截圖內容...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -153,6 +176,9 @@ export default function Home() {
     const MM = String(M).padStart(2, '0');
     const DD = String(D).padStart(2, '0');
 
+    const mmddStr = `${MM}${DD}`; // 如 "0730"
+    const mddStr = `${M}${DD}`;   // 如 "730"
+
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
 
@@ -160,23 +186,19 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 🎯 三種日期格式正規化比對：
-        // 1. 全西元 (如 2026/7/30, 2026-07-30, 2026.7.30)
         const pattern1 = new RegExp(`${YYYY}[/\\-.](0?${M})[/\\-.](0?${D})`, 'i');
-        // 2. 簡短月/日 (如 7/30, 07/30, 7-30)
         const pattern2 = new RegExp(`(^|[^\\d])(0?${M})[/\\-.](0?${D})([^\\d]|$)`, 'i');
-        // 3. 中文月/日 (如 7月30日, 07月30)
         const pattern3 = new RegExp(`(0?${M})月(0?${D})`, 'i');
+        const pattern4 = new RegExp(`(${mmddStr}|${mddStr})`, 'i');
 
-        const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text);
+        const hasDateMatch = pattern1.test(text) || pattern2.test(text) || pattern3.test(text) || pattern4.test(text);
 
         if (hasDateMatch) {
-          setDateNotice(`✅ 成功驗證截圖含今日日期（${YYYY}/${M}/${D}）！`);
+          setDateNotice(`✅ 成功辨識今日日期標記（${M}/${D} 或 ${mmddStr}）！`);
         } else {
-          setDateNotice(`💡 系統未自動偵測到今日日期，別擔心！只要截圖有帶右下角時間或日期，管理員後台會人工審核通過。`);
+          setDateNotice(`💡 提醒：若畫面右下角或聊天室已包含今日日期（如 ${M}/${D}、${mmddStr}），管理員後台會進行人工審核。`);
         }
 
-        // 自動帶入等級與經驗值
         const numbers = text.match(/\d+/g);
         if (numbers && numbers.length > 0) {
           const possibleLv = numbers.find(n => Number(n) >= 1 && Number(n) <= 300);
@@ -185,7 +207,7 @@ export default function Home() {
           if (possibleLv) setLevel(possibleLv);
           if (possibleExp) setExpVal(possibleExp);
 
-          setMsg('✨ 自動解析完成！若數字有誤差請手動校正。');
+          setMsg('✨ 自動帶入完成！若數字有偏差請手動修改。');
         } else {
           setMsg('圖片已選擇！請手動確認填寫等級與經驗值。');
         }
@@ -233,7 +255,8 @@ export default function Home() {
 
       if (subError) throw subError;
 
-      setMsg('🎉 成績已成功提交！');
+      setMsg('🎉 成績已成功提交！排行榜已為您更新。');
+      setHasSubmitted(true); // 上傳完成解鎖排行榜
       fetchLeaderboard();
       fetchUserHistory(charId);
     } catch (err) {
@@ -268,7 +291,7 @@ export default function Home() {
             <h3>📸 回報等級與截圖 (目前登入：<span style={{ color: '#2563eb' }}>{charId}</span>)</h3>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>選擇今日遊戲截圖後，系統會自動比對時間並帶入數據。若有誤差請手動校正。
+              💡 <strong>操作說明：</strong>選擇今日截圖（含右下角時間或日期格式如 0730、7/30）後上傳，系統會自動辨識並幫您累積活動經驗值！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
@@ -286,7 +309,7 @@ export default function Home() {
             <input type="number" placeholder="例如：120" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
-            <input type="number" placeholder="例如：4523000" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+            <input type="number" placeholder="例如：246011374" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
 
             <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
               {loading ? '提交中...' : '確認並提交成績'}
@@ -346,47 +369,50 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 排行榜 (含最後上傳時間) */}
-      <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        <h2 style={{ color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginTop: 0 }}>🏆 練等大賽即時排行榜</h2>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead>
-            <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
-              <th style={{ padding: '12px 8px' }}>名次</th>
-              <th style={{ padding: '12px 8px' }}>角色名稱</th>
-              <th style={{ padding: '12px 8px' }}>等級</th>
-              <th style={{ padding: '12px 8px' }}>經驗值</th>
-              <th style={{ padding: '12px 8px' }}>最後上傳時間</th>
-              <th style={{ padding: '12px 8px' }}>截圖</th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.length === 0 ? (
-              <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
-            ) : (
-              players.map((p, idx) => {
-                const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
-                return (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
-                      {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
-                    </td>
-                    <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
-                    <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
-                    <td style={{ padding: '12px 8px' }}>{p.exp_val ? Number(p.exp_val).toLocaleString() : 0}</td>
-                    <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
-                    <td style={{ padding: '12px 8px' }}>
-                      {p.photo_url ? (
-                        <a href={p.photo_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 'bold' }}>看照片 📸</a>
-                      ) : '無'}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* 🏆 排行榜區塊 (僅限上傳照片後展示) */}
+      {!hasSubmitted ? (
+        <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜已鎖定</h3>
+          <p style={{ margin: 0, fontSize: '15px' }}>請先完成登入並<strong>成功提交一次比賽截圖成績</strong>，即可解鎖並查看活動即時排行榜！</p>
+        </div>
+      ) : (
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginTop: 0 }}>🏆 練等大賽即時排行榜 (活動成長量排名)</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ padding: '12px 8px' }}>名次</th>
+                <th style={{ padding: '12px 8px' }}>角色名稱</th>
+                <th style={{ padding: '12px 8px' }}>當前等級</th>
+                <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
+                <th style={{ padding: '12px 8px' }}>最後更新時間</th>
+              </tr>
+            </thead>
+            <tbody>
+              {players.length === 0 ? (
+                <tr><td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
+              ) : (
+                players.map((p, idx) => {
+                  const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
+                  return (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
+                        {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                      </td>
+                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
+                      <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
+                      <td style={{ padding: '12px 8px', color: '#16a34a', fontWeight: 'bold' }}>
+                        +{Number(p.growth_exp).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
