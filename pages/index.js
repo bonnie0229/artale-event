@@ -214,7 +214,7 @@ export default function Home() {
     });
   }
 
-  // 📸 自動辨識 LV / EXP / 升級版全區寬鬆日期標記
+  // 📸 自動辨識 LV / EXP / 全畫面強力模糊日期掃描
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -222,14 +222,11 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('🔍 正在辨識截圖內容...');
+    setMsg('🔍 正在全畫面掃描截圖內容與日期...');
 
     const now = new Date();
-    const YYYY = now.getFullYear();
-    const M = now.getMonth() + 1;
-    const D = now.getDate();
-    const MM = String(M).padStart(2, '0');
-    const DD = String(D).padStart(2, '0');
+    const M = now.getMonth() + 1; // 7
+    const D = now.getDate();     // 31 (或依當前系統日)
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -237,8 +234,9 @@ export default function Home() {
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
-        // 同時建立無空格扁平化字串，徹底解決 OCR 把字拆散的問題
-        const flattenedText = text.replace(/\s+/g, '').toLowerCase();
+        
+        // 將全畫面文字完全拔掉空白、標點符號、斜線、橫線、點，轉成純小寫與純數字
+        const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
 
         // 1. 🎯 精準辨識等級 (LV.)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
@@ -252,25 +250,31 @@ export default function Home() {
           setExpVal(expMatch[1]);
         }
 
-        // 3. 🎯 升級版全畫面寬鬆日期檢驗（支援 7/30、07/30、7.30、7月30、0730）
-        const dateTargets = [
-          `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
-          `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
-          `${MM}${DD}`, `${M}${DD}`
+        // 3. 🎯 全畫面強力日期比對（涵蓋所有可能組合：如 731, 0731, 7月31等）
+        const targetKeywords = [
+          `${M}${D}`,                          // 731
+          `${String(M).padStart(2,'0')}${String(D).padStart(2,'0')}`, // 0731
+          `${M}月${D}日`,                      // 7月31日
+          `${M}月${D}`,                        // 7月31
+          `${M}/${D}`,                         // 7/31
+          `${String(M).padStart(2,'0')}/${String(D).padStart(2,'0')}`, // 07/31
+          `${M}.${D}`,                         // 7.31
+          `${M}-${D}`                          // 7-31
         ];
 
         let hasDateMatch = false;
-        for (let str of dateTargets) {
-          if (text.includes(str) || flattenedText.includes(str.replace(/\s+/g, '').toLowerCase())) {
+        for (let keyword of targetKeywords) {
+          const cleanKeyword = keyword.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
+          if (cleanAllText.includes(cleanKeyword) || text.includes(keyword)) {
             hasDateMatch = true;
             break;
           }
         }
 
         if (hasDateMatch) {
-          setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
+          setDateNotice(`✅ 成功在全畫面偵測並驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
+          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}），管理員後台會進行人工核對。`);
         }
 
         // 4. 🎯 角色綁定確認
@@ -368,13 +372,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並計算活動經驗值成長量！
+              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0731、7/31），系統會自動帶入 LV 與 EXP 並計算活動經驗值成長量！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在分析圖片中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全畫面掃描截圖中...</p>}
             
             {dateNotice && (
               <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
@@ -475,7 +479,7 @@ export default function Home() {
                 <th style={{ padding: '12px 8px' }}>當前等級</th>
                 <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
                 <th style={{ padding: '12px 8px' }}>當前對應獎品</th>
-                <th style={{ padding: '12px 8px' }}>最後更新時間</th>
+                <th style={{ padding: '12px 8px' }}>最后更新時間</th>
               </tr>
             </thead>
             <tbody>
