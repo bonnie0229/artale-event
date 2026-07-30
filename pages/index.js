@@ -278,7 +278,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在進行繁體中文防作弊與數據解析...');
+    setMsg('⚡ 正在進行安全掃描與數據解析...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -291,22 +291,13 @@ export default function Home() {
       const processedImageUrl = await preprocessAndScaleImage(selectedFile);
 
       if (window.Tesseract) {
-        // 🔐 啟用雙語辨識 (chi_tra + eng) 確保抓取中文名字與數字
-        const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
+        // 使用純英文辨識，維持抓取數字的穩定性
+        const result = await window.Tesseract.recognize(processedImageUrl, 'eng');
         const rawText = result.data.text || '';
         const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
-        const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        console.log("OCR 辨識原始文字：", rawText);
-
-        // --- 1. 🎯 角色名稱防作弊比對 ---
-        if (loggedInUser) {
-          if (cleanRaw.includes(cleanUser) || rawText.includes(loggedInUser)) {
-            setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
-          } else {
-            setCharNotice(`⚠️ 提醒：截圖中未直接讀取到【${loggedInUser}】，將交由後台審核。`);
-          }
-        }
+        // --- 1. 🎯 角色名稱防作弊比對 (純英文環境下交由幹部審核) ---
+        setCharNotice(`💡 提醒：由於角色為中文名稱【${loggedInUser}】，截圖防作弊將交由幹部後台人工審核。`);
 
         // --- 2. 🎯 等級 (Lv) 抓取 ---
         let detectedLv = '';
@@ -363,7 +354,7 @@ export default function Home() {
           setDateNotice(`💡 提醒：若畫面包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
         }
 
-        setMsg('🎉 掃描完成！請確認自動代入的數值，若有誤差可直接手動修正。');
+        setMsg('🎉 掃描完成！請確認自動代入的數值，無誤後即可提交！');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
@@ -460,13 +451,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將進行防作弊中文角色檢測、等級與經驗值自動抓取！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動讀取等級與經驗值！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行繁體中文與數據解析...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行安全掃描與數據解析...</p>}
 
             {charNotice && (
               <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
