@@ -86,7 +86,7 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [dateNotice, setDateNotice] = useState('');
   const [charNotice, setCharNotice] = useState('');
-  const [rawOcrText, setRawOcrText] = useState(''); // 🔍 新增：用來顯示實際辨識出的原始文字
+  const [rawOcrText, setRawOcrText] = useState(''); // 🔍 除錯用原始文字
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -283,7 +283,6 @@ export default function Home() {
     setMsg('⚡ 正在進行截圖數據解析...');
 
     const now = new Date();
-    const YYYY = now.getFullYear();
     const M = now.getMonth() + 1;
     const D = now.getDate();
     const MM = String(M).padStart(2, '0');
@@ -296,30 +295,32 @@ export default function Home() {
         const result = await window.Tesseract.recognize(processedImageUrl, 'chi_tra+eng');
         const rawText = result.data.text || '';
         
-        // 🔍 將原始辨識文字存入 State 顯示在畫面上供檢查
+        // 🔍 顯示除錯文字
         setRawOcrText(rawText);
 
         const cleanRaw = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        // --- 1. 🎯 角色名稱核對 ---
+        // --- 1. 🎯 名稱核對（對應中文 OCR 容易變形，採用寬鬆提示） ---
         if (loggedInUser) {
           if (rawText.includes(loggedInUser) || cleanRaw.includes(loggedInUser.toLowerCase())) {
             setCharNotice(`✅ 成功偵測到角色名稱【${loggedInUser}】`);
           } else {
-            setCharNotice(`⚠️ 未偵測到相符名稱，將交由後台人工審核`);
+            setCharNotice(`💡 提醒：由於遊戲字型特殊，若未完全對應將由後台審核。`);
           }
         }
 
-        // --- 2. 🎯 等級 (Lv) 抓取 ---
+        // --- 2. 🎯 等級 (Lv) 抓取（寬鬆抓取，若抓不到可手動填寫） ---
         let detectedLv = '';
-        const lvMatch = rawText.match(/(?:lv|lvl|level|等級)[\s\.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i);
+        const lvMatch = rawText.match(/(?:lv|lvl|level|等級|l[\s.:\-_]*v)[\s.:\-_]*([1-9][0-9]?|1[0-9]{2}|200)/i);
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
           if (val >= 1 && val <= 200) detectedLv = String(val);
         }
-        if (detectedLv) setLevel(detectedLv);
+        if (detectedLv) {
+          setLevel(detectedLv);
+        }
 
-        // --- 3. 🎯 經驗值 (EXP) 抓取[cite: 1] ---
+        // --- 3. 🎯 經驗值 (EXP) 抓取（完美抓取長數字）[cite: 1] ---
         let detectedExp = '';
         const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || cleanRaw.match(/exp\[?(\d{5,12})/i);
         if (expMatch && expMatch[1]) {
@@ -337,7 +338,7 @@ export default function Home() {
         const dateTargets = [
           `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
           `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
-          `${MM}${DD}`, `${YYYY}${MM}${DD}`
+          `${MM}${DD}`
         ];
 
         let hasDate = false;
@@ -351,10 +352,10 @@ export default function Home() {
         if (hasDate) {
           setDateNotice(`✅ 成功驗證今日日期（${M}/${D}）`);
         } else {
-          setDateNotice(`⚠️ 未在畫面中偵測到今日日期，將交由後台審核`);
+          setDateNotice(`💡 提醒：若畫面未抓到日期（${M}/${D}），將交由後台審核。`);
         }
 
-        setMsg('🎉 掃描完成！請檢查下方除錯面板與自動代入數值。');
+        setMsg('🎉 掃描完成！請檢查上方除錯面板與自動代入的數值。');
       } else {
         setMsg('請手動填寫等級與經驗值。');
       }
@@ -462,7 +463,7 @@ export default function Home() {
             {/* 🔍 OCR 原始文字除錯檢視面板 */}
             {rawOcrText && (
               <div style={{ background: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '8px', fontSize: '12px', marginBottom: '15px', fontFamily: 'monospace', border: '1px solid #334155' }}>
-                <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#facc15' }}>🔍 [除錯面板] Tesseract 實際讀到的原始文字（看這裡就知道錯在哪）：</p>
+                <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#facc15' }}>🔍 [除錯面板] Tesseract 實際讀到的原始文字：</p>
                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#f8fafc', maxHeight: '120px', overflowY: 'auto' }}>{rawOcrText}</pre>
               </div>
             )}
