@@ -10,6 +10,7 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL
 export default function Home() {
   const [charId, setCharId] = useState('');
   const [pin, setPin] = useState('');
+  const [newPin, setNewPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
@@ -44,7 +45,7 @@ export default function Home() {
   async function handleAuth(e) {
     e.preventDefault();
     if (!supabase) return setMsg('Supabase 設定未完全');
-    if (!charId || !pin) return setMsg('請輸入角色名稱與 PIN 碼');
+    if (!charId || !pin) return setMsg('請輸入角色名稱與 4 位數 PIN 碼');
 
     const { data: user } = await supabase
       .from('participants')
@@ -63,6 +64,24 @@ export default function Home() {
       }
       setMsg('登入成功！');
       setIsLoggedIn(true);
+    }
+  }
+
+  async function handleUpdatePin(e) {
+    e.preventDefault();
+    if (!newPin || newPin.length !== 4) return setMsg('新密碼必須是 4 位數字！');
+
+    const { error } = await supabase
+      .from('participants')
+      .update({ pin: newPin })
+      .eq('char_id', charId);
+
+    if (error) {
+      setMsg('修改密碼失敗：' + error.message);
+    } else {
+      setPin(newPin);
+      setNewPin('');
+      setMsg('密碼已成功修改為新密碼！下次請用新密碼登入。');
     }
   }
 
@@ -118,17 +137,29 @@ export default function Home() {
         <form onSubmit={handleAuth} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
           <h3>🔑 玩家登入 / 報名</h3>
           <input type="text" placeholder="遊戲角色 ID" value={charId} onChange={e => setCharId(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-          <input type="password" placeholder="自訂 PIN 碼" value={pin} onChange={e => setPin(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
+          <input type="password" placeholder="自訂 4 位數預設 PIN 碼" value={pin} onChange={e => setPin(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
           <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>登入 / 註冊</button>
         </form>
       ) : (
-        <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
-          <h3>📸 回報等級與截圖 ({charId})</h3>
-          <input type="number" placeholder="當前等級 (Lv)" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-          <input type="number" placeholder="經驗值數字 (EXP)" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
-          <input type="file" accept="image/*" onChange={e => setFile(e.target.files[0])} style={{ display: 'block', margin: '10px 0' }} />
-          <button type="submit" disabled={loading} style={{ padding: '10px 20px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{loading ? '上傳中...' : '提交成績'}</button>
-        </form>
+        <div>
+          {/* 回報成績表單 */}
+          <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+            <h3>📸 回報等級與截圖 (目前登入：{charId})</h3>
+            <input type="number" placeholder="當前等級 (Lv)" value={level} onChange={e => setLevel(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
+            <input type="number" placeholder="經驗值數字 (EXP)" value={expVal} onChange={e => setExpVal(e.target.value)} style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }} />
+            <input type="file" accept="image/*" onChange={e => setFile(e.target.files[0])} style={{ display: 'block', margin: '10px 0' }} />
+            <button type="submit" disabled={loading} style={{ padding: '10px 20px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{loading ? '上傳中...' : '提交成績'}</button>
+          </form>
+
+          {/* 修改 PIN 碼表單 */}
+          <form onSubmit={handleUpdatePin} style={{ background: '#fff1f2', padding: '15px 20px', borderRadius: '12px', border: '1px solid #fecdd3', marginBottom: '30px' }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#9f1239' }}>⚙️ 修改個人的 4 位數 PIN 碼</h4>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%' }} />
+              <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>更新密碼</button>
+            </div>
+          </form>
+        </div>
       )}
 
       <Leaderboard players={players} />
