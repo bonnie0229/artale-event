@@ -243,7 +243,7 @@ export default function Home() {
     }
   }
 
-  // 📸 強化版 OCR 掃描：提升名稱與高等級辨識精準度
+  // 📸 針對 Artale 介面（EXP [數值] 與 LV 框）客製化精準 OCR 掃描
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -253,7 +253,7 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('⚡ 正在全速讀取截圖中的等級、經驗值與身分資訊...');
+    setMsg('⚡ 正在對應 Artale 介面格式讀取等級與經驗值...');
 
     const now = new Date();
     const YYYY = now.getFullYear();
@@ -273,25 +273,24 @@ export default function Home() {
           const flattenedText = rawText.replace(/[\s\-_]+/g, '').toLowerCase();
           const cleanUser = loggedInUser.replace(/[\s\-_]+/g, '').toLowerCase();
 
-          // --- 1. 🎯 強化版角色名稱模糊比對 ---
+          // --- 1. 🎯 角色名稱比對 ---
           if (loggedInUser) {
             if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
               setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
             } else {
-              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】（Tesseract 容易漏字），請確認截圖正確，幹部後台會進行最終審核。`);
+              setCharNotice(`💡 溫馨提醒：截圖中未直接掃描到【${loggedInUser}】，請確認截圖正確，幹部後台會進行最終審核。`);
             }
           }
 
-          // --- 2. 🎯 強化版高等級 (LV) 智慧抓取 ---
+          // --- 2. 🎯 精準等級 (LV) 抓取 (特別針對 Artale 橘色 LV 框) ---
           let detectedLv = '';
-          // 支援各種常見的 Lv 標籤寫法與空格變體
-          const lvMatch = rawText.match(/(?:l\s*v|l\s*\/|l\s*\.|l\s*v\s*l|level)[\s\.:]*(\d{1,3})/i) || 
+          const lvMatch = rawText.match(/(?:lv|l\/|l\.|lvl|level)[\s\.:\[]*(\d{1,3})/i) || 
                           flattenedText.match(/(?:lv|l\/|lvl|level)(\d{1,3})/);
           
           if (lvMatch && lvMatch[1]) {
             detectedLv = lvMatch[1];
           } else {
-            // 如果沒抓到關鍵字，從所有數字中挑選最符合高等級範圍 (50 ~ 200) 的數字
+            // 從所有數字中過濾出高等級 (50 ~ 200)
             const nums = rawText.match(/\b([1-9][0-9]?|1[0-9]{2}|200)\b/g);
             if (nums && nums.length > 0) {
               const validLvs = nums.map(Number).filter(n => n >= 50 && n <= 200);
@@ -304,12 +303,14 @@ export default function Home() {
           }
           if (detectedLv) setLevel(detectedLv);
 
-          // --- 3. 🎯 經驗值 (EXP) 強制帶入 ---
+          // --- 3. 🎯 精準經驗值 (EXP) 抓取 (支援 Artale 的 EXP [數字] 格式) ---
           let detectedExp = '';
-          const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i);
+          // 專門抓取 EXP 後方帶有中括號或空格的數字，例如 EXP [246011374
+          const expMatch = rawText.match(/EXP[\s\.:\[]*([\d,]+)/i) || flattenedText.match(/exp\[?(\d{5,12})/i);
           if (expMatch && expMatch[1]) {
             detectedExp = expMatch[1].replace(/[,.]/g, '');
           } else {
+            // 備用：尋找畫面中最長的一串 5~12 位數字作為 EXP
             const allLongNums = rawText.replace(/[,.]/g, '').match(/\d{5,12}/g);
             if (allLongNums && allLongNums.length > 0) {
               allLongNums.sort((a, b) => b.length - a.length);
@@ -339,7 +340,7 @@ export default function Home() {
             setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
           }
 
-          setMsg('🎉 分析完成！已自動填入 LV 與 EXP，請確認無誤後即可提交！');
+          setMsg('🎉 分析完成！已自動對應介面填入 LV 與 EXP，請確認無誤後即可提交！');
         } else {
           setMsg('請手動填寫等級與經驗值。');
         }
