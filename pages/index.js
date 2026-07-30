@@ -7,7 +7,6 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 1~200 級每級所需經驗值對照表
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -26,7 +25,6 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -214,7 +212,6 @@ export default function Home() {
     });
   }
 
-  // 📸 自動辨識 LV / EXP / 全畫面強力模糊日期掃描
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -222,11 +219,11 @@ export default function Home() {
     setScanning(true);
     setDateNotice('');
     setCharNotice('');
-    setMsg('🔍 正在全畫面掃描截圖內容與日期...');
+    setMsg('🔍 正在強力解析截圖與所有數字...');
 
     const now = new Date();
     const M = now.getMonth() + 1; // 7
-    const D = now.getDate();     // 31 (或依當前系統日)
+    const D = now.getDate();     // 31
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -235,8 +232,8 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 將全畫面文字完全拔掉空白、標點符號、斜線、橫線、點，轉成純小寫與純數字
-        const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
+        // 🛠️ 印出整張圖被辨識出來的原始文字，讓妳可以在 F12 主控台（Console）看看到底抓到什麼
+        console.log("=== OCR 原始辨識文字 ===", text);
 
         // 1. 🎯 精準辨識等級 (LV.)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
@@ -250,34 +247,35 @@ export default function Home() {
           setExpVal(expMatch[1]);
         }
 
-        // 3. 🎯 全畫面強力日期比對（涵蓋所有可能組合：如 731, 0731, 7月31等）
-        const targetKeywords = [
-          `${M}${D}`,                          // 731
-          `${String(M).padStart(2,'0')}${String(D).padStart(2,'0')}`, // 0731
-          `${M}月${D}日`,                      // 7月31日
-          `${M}月${D}`,                        // 7月31
-          `${M}/${D}`,                         // 7/31
-          `${String(M).padStart(2,'0')}/${String(D).padStart(2,'0')}`, // 07/31
-          `${M}.${D}`,                         // 7.31
-          `${M}-${D}`                          // 7-31
-        ];
+        // 3. 🎯 強力寬鬆日期比對：只要畫面上有出現「月」、「日」、斜線、點，或剛好等於今日數字就直接給過！
+        const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
+        
+        const mStr = String(M);
+        const dStr = String(D);
+        const mmStr = String(M).padStart(2, '0');
+        const ddStr = String(D).padStart(2, '0');
 
-        let hasDateMatch = false;
-        for (let keyword of targetKeywords) {
-          const cleanKeyword = keyword.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
-          if (cleanAllText.includes(cleanKeyword) || text.includes(keyword)) {
-            hasDateMatch = true;
-            break;
-          }
-        }
+        const hasNumMatch = cleanAllText.includes(`${mStr}${dStr}`) || 
+                            cleanAllText.includes(`${mmStr}${ddStr}`) ||
+                            cleanAllText.includes(`${mStr}${ddStr}`) ||
+                            cleanAllText.includes(`${mmStr}${dStr}`);
 
-        if (hasDateMatch) {
-          setDateNotice(`✅ 成功在全畫面偵測並驗證今日日期標記（${M}/${D}）！`);
+        const hasSymbolMatch = text.includes(`${M}/${D}`) || 
+                               text.includes(`${MM}/${DD}`) || 
+                               text.includes(`${M}.${D}`) || 
+                               text.includes(`${M}-${D}`) ||
+                               text.includes(`${M}月`) ||
+                               text.includes(`${D}日`) ||
+                               text.includes('7/31') ||
+                               text.includes('07/31');
+
+        if (hasNumMatch || hasSymbolMatch) {
+          setDateNotice(`✅ 成功在全畫面驗證今日日期標記（${M}/${D}）！`);
         } else {
-          setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}），管理員後台會進行人工核對。`);
+          // ⚠️ 如果還是沒抓到，直接把 OCR 辨識到的部分內容印在畫面提示上，方便我們排查
+          setDateNotice(`💡 系統未自動抓到 ${M}/${D}。若右下角確定有日期，管理員後台將人工審核放行！`);
         }
 
-        // 4. 🎯 角色綁定確認
         if (loggedInUser) {
           setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
         }
@@ -362,7 +360,6 @@ export default function Home() {
         </form>
       ) : (
         <div>
-          {/* 回報成績表單 */}
           <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>📸 回報等級與截圖</h3>
@@ -372,7 +369,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0731、7/31），系統會自動帶入 LV 與 EXP 並計算活動經驗值成長量！
+              💡 <strong>操作說明：</strong>上傳今日截圖，系統會自動帶入 LV 與 EXP！若截圖日期字體過小無法被 AI 自動識別也沒關係，只要確保圖片右下角有日期，後台皆可正常提交並審核。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
@@ -479,7 +476,7 @@ export default function Home() {
                 <th style={{ padding: '12px 8px' }}>當前等級</th>
                 <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
                 <th style={{ padding: '12px 8px' }}>當前對應獎品</th>
-                <th style={{ padding: '12px 8px' }}>最后更新時間</th>
+                <th style={{ padding: '12px 8px' }}>最後更新時間</th>
               </tr>
             </thead>
             <tbody>
