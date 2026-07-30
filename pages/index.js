@@ -15,14 +15,12 @@ function getExpRequiredForLevel(lv) {
   if (lv <= 0) return 0;
   if (lv === 120) return 29715818;
   if (lv > 120) {
-    // 120 等之後，每升一等都是前一等的 1.05 倍
     let exp = 29715818;
     for (let i = 121; i <= lv; i++) {
       exp = Math.floor(exp * 1.05);
     }
     return exp;
   }
-  // 1 ~ 119 級的 Artale 標準成長曲線
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
   if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
@@ -30,13 +28,11 @@ function getExpRequiredForLevel(lv) {
   return 15;
 }
 
-// 建立完整的 1~200 級對照陣列
 const REAL_EXP_TABLE = [];
 for (let i = 0; i <= 200; i++) {
   REAL_EXP_TABLE[i] = getExpRequiredForLevel(i);
 }
 
-// 🌟 精準跨等成長計算邏輯
 function calculateTrueGrowth(baseLv, baseExp, currLv, currExp) {
   if (currLv === baseLv) {
     return currExp - baseExp;
@@ -58,7 +54,6 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 正式獎勵標籤
 function getPrizeBadge(rank) {
   if (rank === 0) return '🥇 闇黑龍王披風';
   if (rank === 1) return '🥈 楓葉祝福 20';
@@ -88,7 +83,6 @@ export default function Home() {
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
   const [dateNotice, setDateNotice] = useState('');
-  const [charNotice, setCharNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -246,7 +240,7 @@ export default function Home() {
     }
   }
 
-  // 📸 超級容錯辨識：支援繁體中文與英文混合辨識，自動消除空白與斷行
+  // 📸 高效穩定 OCR：專注自動抓取等級與經驗值數字（捨棄易出錯的中文名稱比對）
   async function handleFileChange(e) {
     if (isEnded) return;
     const selectedFile = e.target.files[0];
@@ -255,15 +249,14 @@ export default function Home() {
     setFile(selectedFile);
     setScanning(true);
     setDateNotice('');
-    setCharNotice('');
-    setMsg('⚡ 正在全圖高清讀取截圖與辨識角色身份（支援繁體中文與英文）...');
+    setMsg('⚡ 正在高效讀取截圖中的等級與經驗值數字...');
 
     const now = new Date();
-    const YYYY = now.getFullYear();
     const M = now.getMonth() + 1;
     const D = now.getDate();
     const MM = String(M).padStart(2, '0');
     const DD = String(D).padStart(2, '0');
+    const YYYY = now.getFullYear();
 
     try {
       const reader = new FileReader();
@@ -271,23 +264,11 @@ export default function Home() {
         const imageDataUrl = event.target.result;
 
         if (window.Tesseract) {
-          // 💡 關鍵修正：將語系改為 'chi_tra+eng'（繁體中文 + 英文），才能正確識別中文角色名稱！
-          const result = await window.Tesseract.recognize(imageDataUrl, 'chi_tra+eng');
+          const result = await window.Tesseract.recognize(imageDataUrl, 'eng');
           const rawText = result.data.text || '';
-
           const flattenedText = rawText.replace(/\s+/g, '').toLowerCase();
-          const cleanUser = loggedInUser.replace(/\s+/g, '').toLowerCase();
 
-          // --- 1. 🎯 角色名稱寬鬆比對 ---
-          if (loggedInUser) {
-            if (flattenedText.includes(cleanUser) || rawText.includes(loggedInUser)) {
-              setCharNotice(`✅ 成功在截圖中偵測到您的角色名稱【${loggedInUser}】！`);
-            } else {
-              setCharNotice(`⚠️ 警告：截圖內找不到目前登入的角色名稱【${loggedInUser}】！請確認是否上傳到別人的截圖。`);
-            }
-          }
-
-          // --- 2. 🎯 等級 (LV) 智慧抓取 ---
+          // --- 1. 🎯 穩定抓取等級 (LV) ---
           let detectedLv = '';
           const lvRegex = /(?:lv|l\/|ln)[\s\.:]*(\d{1,3})/i;
           const matchLv = rawText.match(lvRegex);
@@ -304,7 +285,7 @@ export default function Home() {
           }
           if (detectedLv) setLevel(detectedLv);
 
-          // --- 3. 🎯 經驗值 (EXP) 強制帶入 ---
+          // --- 2. 🎯 穩定抓取經驗值 (EXP) ---
           let detectedExp = '';
           const expMatch = rawText.match(/EXP[\s\.:]*([\d,.]+)/i);
           if (expMatch && expMatch[1]) {
@@ -318,7 +299,7 @@ export default function Home() {
           }
           if (detectedExp) setExpVal(detectedExp);
 
-          // --- 4. 🎯 寬鬆日期判斷 ---
+          // --- 3. 🎯 日期溫馨提示 ---
           const dateTargets = [
             `${M}/${D}`, `${MM}/${DD}`, `${M}-${D}`, `${MM}-${DD}`,
             `${M}.${D}`, `${MM}.${DD}`, `${M}月${D}`, `${MM}月${DD}`,
@@ -336,19 +317,19 @@ export default function Home() {
           if (hasDate) {
             setDateNotice(`✅ 成功驗證今日日期標記（${M}/${D}）！`);
           } else {
-            setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}、${MM}${DD}），管理員後台會進行人工核對。`);
+            setDateNotice(`💡 提醒：若畫面右下角已包含今日日期（如 ${M}/${D}），幹部後台會進行審核。`);
           }
 
-          setMsg('🎉 分析完成！已自動填入 LV 與 EXP，請確認角色名稱與數字無誤後即可提交。');
+          setMsg('🎉 截圖分析完成！已自動填入 LV 與 EXP，確認無誤後即可直接提交！');
         } else {
-          setMsg('請檢查並確認等級與經驗值。');
+          setMsg('請手動確認等級與經驗值。');
         }
         setScanning(false);
       };
 
       reader.readAsDataURL(selectedFile);
     } catch (err) {
-      setMsg('💡 照片已選擇，請確認輸入框內的數字。');
+      setMsg('💡 照片已選擇，請手動確認輸入框內的數字。');
       setScanning(false);
     }
   }
@@ -439,19 +420,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳今日截圖（含時間日期，如 0730、7/30），系統會自動帶入 LV 與 EXP 並核對角色名稱！
+              💡 <strong>操作說明：</strong>上傳今日截圖，系統將自動為您讀取當前等級與經驗值數字！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全圖高清讀取與核對角色名稱中...</p>}
-            
-            {charNotice && (
-              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fef2f2', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fecdd3'), color: charNotice.includes('✅') ? '#15803d' : '#991b1b', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
-                {charNotice}
-              </div>
-            )}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在高效讀取截圖中的數字...</p>}
 
             {dateNotice && (
               <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
