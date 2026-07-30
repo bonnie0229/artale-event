@@ -149,12 +149,9 @@ export default function Home() {
 
     if (data) {
       setHistory(data);
-      if (data.length > 0) {
-        setHasSubmitted(true);
-        fetchLeaderboard();
-      } else {
-        setHasSubmitted(false);
-      }
+      // 依據第 3 點需求：「輸入資料成功後可以看排行榜，每看一次都需要輸入資料」
+      // 這裡刻意每次重新整理或登入後，讓 hasSubmitted 預設為 false，必須完成當次提交才能解鎖排行榜
+      setHasSubmitted(false);
     }
   }
 
@@ -274,7 +271,7 @@ export default function Home() {
     });
   }
 
-  // 📸 精準鎖定關鍵字的自動填入 (穩定抓取 Lv 與 EXP)
+  // 📸 自動精準掃描與填入 (確保名字、等級、經驗值完整抓取)
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -283,7 +280,7 @@ export default function Home() {
     setDateNotice('');
     setCharNotice('');
     setIsManuallyEdited(false);
-    setMsg('🔍 正在精準辨識截圖中的等級與經驗值...');
+    setMsg('🔍 正在強力解析截圖中的資料...');
 
     const now = new Date();
     const M = now.getMonth() + 1;
@@ -296,7 +293,7 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
         
-        // 🛠️ 1. 精準抓取等級 (對應 Lv 或 Level 後面的數字)
+        // 1. 🎯 自動帶入等級 (Lv)
         let foundLv = '';
         const lvMatch = text.match(/(?:lv|level|l\/|ln)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
@@ -304,7 +301,7 @@ export default function Home() {
           setLevel(foundLv);
         }
 
-        // 🛠️ 2. 精準抓取經驗值 (對應 EXP 後面的數字)
+        // 2. 🎯 自動帶入經驗值 (EXP)
         let foundExp = '';
         const expMatch = text.match(/EXP[\s\.:]*([\d,.]+)/i);
         if (expMatch && expMatch[1]) {
@@ -312,7 +309,16 @@ export default function Home() {
           setExpVal(foundExp);
         }
 
-        // 3. 🎯 日期核對
+        // 3. 🎯 偵測角色名稱（若畫面上有抓到登入者名字或相近字串可供確認）
+        if (loggedInUser) {
+          if (text.includes(loggedInUser)) {
+            setCharNotice(`✅ 成功在截圖中核對到角色名稱：${loggedInUser}`);
+          } else {
+            setCharNotice(`💡 提醒：畫面角色名稱與目前登入帳號 (${loggedInUser}) 進行核對中。`);
+          }
+        }
+
+        // 4. 🎯 日期核對
         const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '').toLowerCase();
         const mStr = String(M);
         const dStr = String(D);
@@ -337,14 +343,10 @@ export default function Home() {
           setDateNotice(`💡 提醒：若畫面右下角、頻道或聊天室已包含今日日期（如 ${M}/${D}），管理員後台會進行人工審核放行！`);
         }
 
-        if (loggedInUser) {
-          setCharNotice(`✅ 已確認綁定目前登入角色：${loggedInUser}`);
-        }
-
         if (foundLv || foundExp) {
-          setMsg('✨ 分析完成！已自動填入數值，若有誤差可直接手動修改。');
+          setMsg('✨ 分析完成！等級與經驗值已自動填入，若有修改將自動標記供管理員審核。');
         } else {
-          setMsg('💡 未能自動辨識到 Lv 或 EXP 關鍵字，請手動填入對應數字。');
+          setMsg('💡 未能自動辨識到完整數值，請手動填入。');
         }
       }
     } catch (err) {
@@ -379,6 +381,7 @@ export default function Home() {
 
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
+      // 🔍 提交時帶入 is_manually_edited，若有手動修改過會標記供管理員審核
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
@@ -392,7 +395,7 @@ export default function Home() {
       if (subError) throw subError;
 
       setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
-      setHasSubmitted(true);
+      setHasSubmitted(true); // 解鎖排行榜
       await fetchUserHistory(loggedInUser);
       await fetchLeaderboard();
     } catch (err) {
@@ -401,9 +404,6 @@ export default function Home() {
       setLoading(false);
     }
   }
-
-  // 判斷是否為「第一次登入」
-  const isFirstLogin = history.length === 0;
 
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
@@ -444,37 +444,14 @@ export default function Home() {
 
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
-            {/* 🔑 第一次登入後：在頁面上方提示大家更改 PIN 碼與改名 */}
-            {isFirstLogin && (
-              <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', padding: '15px', borderRadius: '8px', marginBottom: '15px' }}>
-                <h4 style={{ margin: '0 0 10px 0', color: '#9f1239' }}>⚙️ 【首次登入提醒】請盡快修改您的 4 位數 PIN 碼與確認角色名稱！</h4>
-                
-                <div style={{ marginBottom: '10px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '3px' }}>🔑 修改個人 4 位數 PIN 碼：</label>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '6px', width: '100%', borderRadius: '4px', border: '1px solid #fda4af' }} />
-                    <button type="button" onClick={handleUpdatePin} style={{ padding: '6px 12px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '3px' }}>🔄 角色遊戲內改名 / 轉移數據：</label>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <input type="text" placeholder="輸入遊戲內的新角色 ID" value={newCharIdInput} onChange={e => setNewCharIdInput(e.target.value)} style={{ padding: '6px', width: '100%', borderRadius: '4px', border: '1px solid #fda4af' }} />
-                    <button type="button" onClick={handleRename} style={{ padding: '6px 12px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>確認改名</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後系統將自動鎖定關鍵字填入等級與經驗值。若有誤差可直接手動修改！
+              💡 <strong>操作說明：</strong>上傳截圖後系統將自動填入名稱核對、等級與經驗值。若手動修改數值，將自動標記供管理員後台審核！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在辨識截圖中的等級與經驗值...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析截圖中的資料...</p>}
             
             {dateNotice && (
               <div style={{ background: dateNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (dateNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: dateNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
@@ -496,7 +473,7 @@ export default function Home() {
               value={level} 
               onChange={e => { 
                 setLevel(e.target.value); 
-                setIsManuallyEdited(true); 
+                setIsManuallyEdited(true); // 👈 標記手動修改供管理員審核
               }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
@@ -509,7 +486,7 @@ export default function Home() {
               value={expVal} 
               onChange={e => { 
                 setExpVal(e.target.value); 
-                setIsManuallyEdited(true); 
+                setIsManuallyEdited(true); // 👈 標記手動修改供管理員審核
               }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
             />
@@ -525,27 +502,25 @@ export default function Home() {
             </button>
           </form>
 
-          {/* ⚙️ 第二次登入後：PIN 碼修改與改名移至頁面最下方 */}
-          {!isFirstLogin && (
-            <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-              <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
-              <form onSubmit={handleUpdatePin} style={{ marginBottom: '15px' }}>
-                <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔑 修改個人 4 位數 PIN 碼：</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                  <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
-                </div>
-              </form>
+          {/* ⚙️ 第 1 點需求：更改 PIN 碼及名字請移到該頁的最下方 */}
+          <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>⚙️ 個人帳號管理設定</h4>
+            <form onSubmit={handleUpdatePin} style={{ marginBottom: '15px' }}>
+              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔑 修改個人 4 位數 PIN 碼：</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input type="password" maxLength={4} placeholder="輸入新 4 位數密碼" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>更新密碼</button>
+              </div>
+            </form>
 
-              <form onSubmit={handleRename}>
-                <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔄 角色遊戲內改名 / 轉移數據：</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input type="text" placeholder="輸入遊戲內的新角色 ID" value={newCharIdInput} onChange={e => setNewCharIdInput(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                  <button type="submit" style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>確認改名</button>
-                </div>
-              </form>
-            </div>
-          )}
+            <form onSubmit={handleRename}>
+              <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🔄 角色遊戲內改名 / 轉移數據：</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input type="text" placeholder="輸入遊戲內的新角色 ID" value={newCharIdInput} onChange={e => setNewCharIdInput(e.target.value)} style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 'bold' }}>確認改名</button>
+              </div>
+            </form>
+          </div>
 
           {/* 📈 角色經驗值走勢圖與歷史明細表格 */}
           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
@@ -636,7 +611,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 排行榜區塊 */}
+      {/* 🏆 第 3 點需求：輸入資料成功後可以看排行榜，每看一次都需要輸入資料 */}
       {!hasSubmitted ? (
         <div style={{ background: '#f1f5f9', padding: '30px', borderRadius: '12px', textAlign: 'center', color: '#475569', border: '2px dashed #cbd5e1' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>🔒 排行榜未解鎖</h3>
@@ -644,7 +619,15 @@ export default function Home() {
         </div>
       ) : (
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <h2 style={{ color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginTop: 0 }}>🏆 練等大賽即時排行榜 (活動成長量排名)</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginBottom: '15px' }}>
+            <h2 style={{ color: '#0f172a', margin: 0 }}>🏆 練等大賽即時排行榜 (活動成長量排名)</h2>
+            <button 
+              onClick={() => setHasSubmitted(false)} 
+              style={{ padding: '6px 14px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+            >
+              🔒 鎖定並返回重新輸入資料
+            </button>
+          </div>
           
           <div style={{ width: '100%', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
