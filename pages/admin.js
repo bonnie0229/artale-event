@@ -240,17 +240,17 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            // 手機版：更寬鬆的中央浮動狀態框範圍 (X: 15%~85%, Y: 50%~95%)
-            cropX = img.width * 0.15;
-            cropY = img.height * 0.50;
-            cropWidth = img.width * 0.70;
-            cropHeight = img.height * 0.45;
+            // 手機版：擴大中央狀態框範圍 (X: 10%~90%, Y: 40%~95%)
+            cropX = img.width * 0.10;
+            cropY = img.height * 0.40;
+            cropWidth = img.width * 0.80;
+            cropHeight = img.height * 0.55;
           } else {
-            // 電腦版：下方完整狀態列 (X: 0%~100%, Y: 65%~100%)
+            // 電腦版：下方完整狀態列 (X: 0%~100%, Y: 60%~100%)
             cropX = 0;
-            cropY = img.height * 0.65;
+            cropY = img.height * 0.60;
             cropWidth = img.width;
-            cropHeight = img.height * 0.35;
+            cropHeight = img.height * 0.40;
           }
 
           canvas.width = cropWidth;
@@ -267,7 +267,7 @@ export default function Home() {
     });
   }
 
-  // 📸 v3.13 精準解析：高穩定 eng 引擎與智慧防呆解析
+  // 📸 v3.14 嚴格 ID 交叉檢查與精準數值解析
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -283,18 +283,41 @@ export default function Home() {
       const ocrImage = await prepareImageForOCR(selectedFile, deviceType);
 
       if (window.Tesseract) {
-        // 使用高效能穩定英文與數字辨識引擎
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 等級強力抓取 (支援 LV. 173、Lv186、或 L. 數字等各種像素變體)
+        // 1. 嚴格 ID 交叉核對
+        let isIdValid = false;
+        if (loggedInUser) {
+          const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
+          const cleanUser = loggedInUser.trim().replace(/[\s\-_]+/g, '').toLowerCase();
+          
+          // 若登入帳號為英文（如 apple），直接比對；若為中文，檢查 OCR 是否有讀到部分或完全相符
+          if (cleanText.includes(cleanUser) || /^[a-zA-Z0-9]+$/.test(loggedInUser) && cleanText.includes(cleanUser.toLowerCase())) {
+            isIdValid = true;
+          } else {
+            // 寬容備用：若使用者上傳的是中文 ID，且英文 OCR 引擎無法完整轉譯中文，允許手動核對但跳出警告
+            // 但如果畫面中完全沒有符合的特徵，則判斷為不符
+            isIdValid = false;
+          }
+        }
+
+        if (!isIdValid && loggedInUser) {
+          setCharNotice(`⚠️ 錯誤：截圖中的角色 ID 與目前登入帳號【${loggedInUser}】不符！系統已阻斷自動填入，請確認截圖是否正確。`);
+          setIsManualEdited(true);
+          setScanning(false);
+          setMsg('❌ ID 核對失敗，未帶入數值。');
+          return; // 立即中斷，不往下抓等級與經驗值
+        }
+
+        // 2. 等級強力抓取 (精準抓取 LV. 或 Lv. 後方的 1~3 位數，避開工作列時鐘或其它干擾)
         let foundLevel = '';
         const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
           if (val >= 1 && val <= 200) foundLevel = String(val);
         } else {
-          // 備用：尋找文字中介於 1 到 200 的獨立數字
+          // 備用過濾：尋找獨立大於 10 且小於等於 200 的數字
           const allNums = text.match(/\b\d{1,3}\b/g);
           if (allNums) {
             const valid = allNums.find(n => Number(n) >= 10 && Number(n) <= 200);
@@ -303,7 +326,7 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 2. 經驗值智慧抓取 (優先抓取中括號 [ 之前的大數字，若無則尋找畫面中最大 5~11 位數)
+        // 3. 經驗值精準抓取
         let foundExp = '';
         const expMatch = text.match(/([0-9]{5,11})\s*\[/);
         if (expMatch && expMatch[1]) {
@@ -311,7 +334,6 @@ export default function Home() {
         } else {
           const bigNums = text.match(/\b[0-9]{5,11}\b/g);
           if (bigNums && bigNums.length > 0) {
-            // 過濾掉等級數字，挑選最大的數值作為經驗值
             const filtered = bigNums.map(Number).filter(n => n > 200);
             if (filtered.length > 0) {
               foundExp = String(Math.max(...filtered));
@@ -320,18 +342,7 @@ export default function Home() {
         }
         if (foundExp) setExpVal(foundExp);
 
-        // 3. ID 智慧比對（柔性檢驗，若含有中文或英文符合則通過）
-        if (loggedInUser) {
-          const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
-          const cleanUser = loggedInUser.trim().replace(/[\s\-_]+/g, '').toLowerCase();
-          
-          if (cleanText.includes(cleanUser) || cleanUser.length <= 2) {
-            setCharNotice(`✅ 截圖辨識成功！目前登入角色：【${loggedInUser}】`);
-          } else {
-            setCharNotice(`💡 提示：若您的角色 ID 含中文，OCR 可能無法完全顯示。請確認上方抓取的等級與經驗值正確即可送出！`);
-          }
-        }
-
+        setCharNotice(`✅ ID 核對成功：截圖中確認包含角色【${loggedInUser}】！`);
         setMsg('✨ 辨識完成！請核對下方數值與預覽圖。');
       }
     } catch (err) {
@@ -397,11 +408,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.13</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.14</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.13)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.14)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -440,7 +451,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.13 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>，請核對等級與經驗值是否正確帶入！
+              💡 <strong>v3.14 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>與 ID 嚴格核對結果！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
@@ -471,7 +482,7 @@ export default function Home() {
             )}
 
             {charNotice && (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fff5f5', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#feb2b2'), color: charNotice.includes('✅') ? '#15803d' : '#c53030', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
