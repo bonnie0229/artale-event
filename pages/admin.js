@@ -15,7 +15,6 @@ function getExpRequiredForLevel(lv) {
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
   if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
   if (lv <= 200) {
-    // 120等後每升等一次為 1.05 倍需求
     const baseExp120 = 3000000; 
     return Math.floor(baseExp120 * Math.pow(1.05, lv - 121));
   }
@@ -152,7 +151,6 @@ export default function Home() {
     }
   }
 
-  // 🔑 玩家即輸即註冊與登入
   async function handleAuth(e) {
     e.preventDefault();
     const cleanId = charId.trim();
@@ -206,7 +204,7 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1800;
+          const maxDim = 2000;
           let width = img.width;
           let height = img.height;
           if (width > height && width > maxDim) {
@@ -220,7 +218,7 @@ export default function Home() {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.92));
+          resolve(canvas.toDataURL('image/jpeg', 0.95));
         };
         img.src = e.target.result;
       };
@@ -228,7 +226,7 @@ export default function Home() {
     });
   }
 
-  // 📸 自動辨識 LV、EXP 與角色 ID 驗證
+  // 📸 升級版 OCR 智慧辨識 (精準過濾介面干擾)
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -236,7 +234,7 @@ export default function Home() {
     setScanning(true);
     setCharNotice('');
     setIsManualEdited(false);
-    setMsg('🔍 正在智慧辨識截圖內容...');
+    setMsg('🔍 正在智慧辨識遊戲截圖...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -245,31 +243,33 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 等級辨識 (LV)
-        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
+        // 1. 精準抓取等級 (LV) - 支援 LV. 179 或 LV179 格式
+        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
         }
 
-        // 2. 經驗值辨識 (EXP)
-        const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
+        // 2. 精準抓取經驗值 (EXP) - 排除括號百分比，只抓取純數字
+        const expRegex = /EXP[\s\.:]*([0-9,]+)/i;
+        const expMatch = text.match(expRegex);
         if (expMatch && expMatch[1]) {
-          setExpVal(expMatch[1]);
+          const cleanExp = expMatch[1].replace(/,/g, '');
+          setExpVal(cleanExp);
         }
 
-        // 3. 智慧核對畫面中是否有目前登入的角色 ID
+        // 3. 智慧核對目前登入的遊戲 ID
         if (loggedInUser) {
-          const cleanText = text.replace(/\s+/g, '');
-          const cleanUser = loggedInUser.trim();
+          const cleanText = text.replace(/\s+/g, '').toLowerCase();
+          const cleanUser = loggedInUser.trim().toLowerCase();
           if (cleanText.includes(cleanUser)) {
             setCharNotice(`✅ 成功在截圖中確認角色 ID：${loggedInUser}`);
           } else {
-            setCharNotice(`⚠️ 提示：截圖中未自動偵測到相符的遊戲 ID（${loggedInUser}）。若確認無誤可手動核對數值並提交，系統將交由管理員審核。`);
+            setCharNotice(`⚠️ 提示：截圖中未自動完全對應到角色 ID（${loggedInUser}）。若數值有誤請手動修改，送出後將由管理員審核。`);
             setIsManualEdited(true);
           }
         }
 
-        setMsg('✨ 辨識完成！請檢查帶入數值，如有誤差可直接手動修改。');
+        setMsg('✨ 智慧辨識完成！請核對下方數值，如有誤差可直接修改。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動確認等級與經驗值。');
@@ -278,7 +278,6 @@ export default function Home() {
     }
   }
 
-  // 📤 提交成績
   async function handleSubmit(e) {
     e.preventDefault();
     if (!file) return setMsg('請選擇截圖照片');
@@ -379,7 +378,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳遊戲截圖，系統會自動掃描 LV 與 EXP。如有誤差可手動修改，修改後將標記提醒管理員審核！
+              💡 <strong>操作說明：</strong>上傳電腦版或手機版遊戲截圖，系統會自動掃描 LV 與 EXP。如有誤差可直接手動修改，修改後將標記提醒管理員審核！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
@@ -394,12 +393,12 @@ export default function Home() {
             )}
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
-            <input type="number" placeholder="例如：125" value={level} onChange={e => { setLevel(e.target.value); setIsManualEdited(true); }} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+            <input type="number" placeholder="例如：179" value={level} onChange={e => { setLevel(e.target.value); setIsManualEdited(true); }} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
             <input 
               type="number" 
-              placeholder="例如：12345678" 
+              placeholder="例如：352627350" 
               value={expVal} 
               onChange={e => { setExpVal(e.target.value); setIsManualEdited(true); }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
