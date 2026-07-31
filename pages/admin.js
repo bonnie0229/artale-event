@@ -52,6 +52,7 @@ export default function Home() {
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
+  const [deviceType, setDeviceType] = useState('pc'); // 預設電腦版 'pc' 或 'mobile'
   
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
@@ -197,8 +198,8 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 v3.1 核心升級：自動裁切圖片下方 45% 狀態列區域，隔絕聊天室與背景干擾
-  function prepareImageForOCR(file) {
+  // 🎯 v3.4 修正版裁切邏輯：電腦版完整涵蓋底部到 100%，支援全螢幕與視窗化
+  function prepareImageForOCR(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -207,10 +208,21 @@ export default function Home() {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          const cropX = 0;
-          const cropY = img.height * 0.55; // 從畫面中下方開始
-          const cropWidth = img.width;
-          const cropHeight = img.height * 0.45; // 只取底部狀態列區域
+          let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
+
+          if (type === 'mobile') {
+            // 手機版：畫面中間下方狀態框 (X: 25%~75%, Y: 60%~95%)
+            cropX = img.width * 0.25;
+            cropY = img.height * 0.60;
+            cropWidth = img.width * 0.50;
+            cropHeight = img.height * 0.35;
+          } else {
+            // 電腦版：下方狀態列 (X: 0%~100%, Y: 68%~100% 完整涵蓋全螢幕與視窗化底部)
+            cropX = 0;
+            cropY = img.height * 0.68;
+            cropWidth = img.width;
+            cropHeight = img.height * 0.32;
+          }
 
           canvas.width = cropWidth;
           canvas.height = cropHeight;
@@ -224,7 +236,7 @@ export default function Home() {
     });
   }
 
-  // 📸 v3.1 智慧區塊 OCR 掃描
+  // 📸 v3.4 智慧區塊 OCR 掃描
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -232,31 +244,41 @@ export default function Home() {
     setScanning(true);
     setCharNotice('');
     setIsManualEdited(false);
-    setMsg('🔍 正在精準鎖定底部狀態列並掃描...');
+    setMsg(`🔍 正在精準掃描${deviceType === 'mobile' ? '手機版' : '電腦版'}狀態區塊...`);
 
     try {
-      const ocrImage = await prepareImageForOCR(selectedFile);
+      const ocrImage = await prepareImageForOCR(selectedFile, deviceType);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
         // 1. 精準抓取等級 (LV)
-        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i);
+        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/1\s*[6-8]\s*\d/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
+        } else {
+          const nums = text.match(/\d{2,3}/g);
+          if (nums && nums.length > 0) {
+            const possibleLv = nums.find(n => Number(n) >= 10 && Number(n) <= 200);
+            if (possibleLv) setLevel(possibleLv);
+          }
         }
 
         // 2. 精準抓取經驗值 (EXP)
-        const expRegex = /EXP[\s\.:]*([0-9,]+)/i;
+        const expRegex = /(?:EXP[\s\.:]*|\[)?([0-9]{7,10})(?:\[|%|$)/i;
         const expMatch = text.match(expRegex);
         if (expMatch && expMatch[1]) {
-          const cleanExp = expMatch[1].replace(/,/g, '');
-          setExpVal(cleanExp);
+          setExpVal(expMatch[1]);
+        } else {
+          const allNums = text.match(/\d{7,10}/g);
+          if (allNums && allNums.length > 0) {
+            setExpVal(allNums[0]);
+          }
         }
 
-        setCharNotice(`✅ 已自動擷取底部狀態列數值，請核對下方等級與經驗值是否正確！`);
-        setMsg('✨ 智慧辨識完成！');
+        setCharNotice(`✅ 已完成${deviceType === 'mobile' ? '手機版' : '電腦版'}區塊辨識，請核對下方數值！`);
+        setMsg('✨ 辨識完成！');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動確認等級與經驗值。');
@@ -322,11 +344,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.1</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.4</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.1)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.4)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -365,13 +387,25 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.1 優化說明：</strong>系統現在會自動擷取截圖底部的狀態列（LV 與 EXP），不受上方聊天室或背景干擾。如有誤差可直接手動修改！
+              💡 <strong>v3.4 操作說明：</strong>請選擇你是<strong>電腦版</strong>或<strong>手機版</strong>截圖（支援全螢幕與視窗化），系統會自動抓取完整底部狀態列進行辨識！
+            </div>
+
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+              <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
+                <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
+                💻 電腦版截圖 (支援全螢幕/視窗化底部)
+              </label>
+              <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
+                <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
+                📱 手機版截圖 (中間下方狀態框)
+              </label>
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在智慧裁切與掃描底部狀態列...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在智慧掃描指定裝置區塊...</p>}
             
             {charNotice && (
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
