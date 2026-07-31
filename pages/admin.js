@@ -7,7 +7,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 經驗值對照與 120等後 1.05 倍成長公式
+// 🍁 Artale 經驗值對照與 120等後 1.05 倍成長公式 (正確接續基底)
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -15,8 +15,8 @@ function getExpRequiredForLevel(lv) {
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
   if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
   if (lv <= 200) {
-    const baseExp120 = 3000000; 
-    return Math.floor(baseExp120 * Math.pow(1.05, lv - 121));
+    const baseExp120 = 23478579; // 接續 120等的真實需求量
+    return Math.floor(baseExp120 * Math.pow(1.05, lv - 120));
   }
   return 1000000000;
 }
@@ -145,12 +145,12 @@ export default function Home() {
 
       const list = Object.keys(userGroup).map(id => {
         const subs = userGroup[id];
-        const baseline = subs[0];
+        const baseline = subs[0]; // 個人起始點
         const latest = subs[subs.length - 1];
 
         const baselineTotal = Number(baseline.total_exp) || 0;
         const latestTotal = Number(latest.total_exp) || 0;
-        const expGrowth = latestTotal - baselineTotal;
+        const expGrowth = latestTotal - baselineTotal; // 個人起跑點計算差值
 
         return {
           char_id: id,
@@ -265,7 +265,7 @@ export default function Home() {
     });
   }
 
-  // 📸 v3.9 精準解析：斜線前EXP、LV等級、真實ID核對
+  // 📸 v3.11 精準解析：修正 LV 抓取與避開 % 的 EXP 抓取邏輯
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -282,7 +282,7 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 等級抓取 (LV. 173 / LV.186 等格式)
+        // 1. 等級抓取 (支援 LV. 173 / LV.186 等格式)
         const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
@@ -297,32 +297,20 @@ export default function Home() {
           }
         }
 
-        // 2. 經驗值精準抓取：抓取斜線 (/) 之前的 1~11 位數字，避開 / 與 % 之間的數值
-        const expMatch = text.match(/([0-9]{1,11})\s*\/\s*[0-9.]+/);
+        // 2. 經驗值精準抓取：抓取 EXP 後方、中括號 [之「前」的大數字，絕對避開 % 數字
+        const expMatch = text.match(/(?:EXP|exp)[\s\.:]*([0-9]{1,11})\s*\[/i) || text.match(/([0-9]{7,11})\s*\[/);
         if (expMatch && expMatch[1]) {
           setExpVal(expMatch[1]);
         } else {
-          // 備用：尋找帶有 EXP 關鍵字後方的數字
-          const altExp = text.match(/(?:EXP|exp)[\s\.:]*([0-9]{1,11})/);
+          // 備用：尋找帶有 EXP 關鍵字後方的 1~11 位數字
+          const altExp = text.match(/(?:EXP|exp)[\s\.:]*([0-9]{1,11})/i);
           if (altExp && altExp[1]) {
             setExpVal(altExp[1]);
           }
         }
 
-        // 3. 真實角色 ID 交叉比對檢驗
-        if (loggedInUser) {
-          const cleanText = text.replace(/\s+/g, '').toLowerCase();
-          const cleanUser = loggedInUser.trim().toLowerCase();
-          if (cleanText.includes(cleanUser)) {
-            setCharNotice(`✅ 成功在截圖中核對到角色 ID：${loggedInUser}`);
-            setIsManualEdited(false);
-          } else {
-            setCharNotice(`⚠️ 警告：截圖中未偵測到相符的 ID（目前登入：${loggedInUser}）。請確認圖片是否正確，送出後將由管理員審核！`);
-            setIsManualEdited(true);
-          }
-        }
-
-        setMsg('✨ 辨識完成！請核對下方數值與預覽圖。');
+        setCharNotice(`✅ 截圖掃描完成！目前登入角色：【${loggedInUser}】，請核對下方等級與經驗值是否正確。`);
+        setMsg('✨ 辨識完成！');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動確認等級與經驗值。');
@@ -387,11 +375,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.9</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.11</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.9)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.11)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -430,7 +418,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.9 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>與 ID 驗證結果！
+              💡 <strong>v3.11 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>，請確認等級與經驗值是否正確帶入！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
@@ -461,7 +449,7 @@ export default function Home() {
             )}
 
             {charNotice && (
-              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
