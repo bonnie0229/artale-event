@@ -69,7 +69,6 @@ export default function Home() {
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
-  const [scanDebugInfo, setScanDebugInfo] = useState(''); // 🔍 詳細除錯回報面板
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -222,7 +221,6 @@ export default function Home() {
     }
   }
 
-  // 🎯 圖片前置處理與縮放
   function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -252,14 +250,13 @@ export default function Home() {
     });
   }
 
-  // 🎯 【高精度自動抓取與詳細除錯回報機制】
+  // 🎯 使用您提供的正確抓法邏輯
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
     setMsg('🔍 正在強力解析截圖...');
-    setScanDebugInfo('⏳ 正在啟動 OCR 引擎讀取圖面文字...');
 
     try {
       let attempts = 0;
@@ -270,81 +267,32 @@ export default function Home() {
 
       if (!window.Tesseract) {
         setMsg('⚠️ 辨識元件載入中，請稍候再試。');
-        setScanDebugInfo('❌ 失敗原因：Tesseract 引擎未成功載入（可能是網路阻擋）。');
         setScanning(false);
         return;
       }
 
       const ocrImage = await prepareImageForOCR(selectedFile);
       const result = await window.Tesseract.recognize(ocrImage, 'eng');
-      const text = result.data.text || ''; // 🛠️ 確保正確對應到 result.data.text
+      const text = result.data.text;
       
-      console.log('=== OCR 原始辨識文字 ===\n', text);
+      console.log("=== OCR 原始辨識文字 ===", text);
 
-      let detectedLv = '';
-      let detectedExp = '';
-      let lvReason = '';
-      let expReason = '';
-
-      // 1. 🎯 等級抓取邏輯 (Lv.)
-      const lvMatch = text.match(/(?:lv|level)\D*(\d{1,3})/i);
+      // 1. 🎯 精準辨識等級 (LV.) - 您提供的正確抓法
+      const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/LV\.\s*(\d+)/i);
       if (lvMatch && lvMatch[1]) {
-        const val = Number(lvMatch[1]);
-        if (val >= 120 && val <= 200) {
-          detectedLv = lvMatch[1];
-          setLevel(detectedLv);
-          lvReason = `成功匹配關鍵字 "Lv/Level" 後方的有效等級 [ ${detectedLv} ]`;
-        } else {
-          lvReason = `抓到了數字 "${lvMatch[1]}"，但不在 120~200 有效等級範圍內`;
-        }
-      } else {
-        lvReason = `在 OCR 文字中找不到 "Lv" 或 "Level" 關鍵字，或後方沒有數字`;
+        setLevel(lvMatch[1]);
       }
 
-      // 2. 🎯 經驗值抓取邏輯 (EXP.)
-      const expMatch = text.match(/(?:exp)\D*(\d{7,10})/i);
+      // 2. 🎯 精準辨識經驗值 (EXP.) - 您提供的正確抓法
+      const expMatch = text.match(/EXP[\s\.:]*(\d+)/i) || text.match(/EXP\.\s*(\d+)/i);
       if (expMatch && expMatch[1]) {
-        detectedExp = expMatch[1];
-        setExpVal(detectedExp);
-        expReason = `成功匹配關鍵字 "EXP" 後方的長數字 [ ${detectedExp} ]`;
-      } else {
-        // 備用：全域搜尋 7~10 位數長數字
-        const allNums = text.replace(/[,.]/g, ' ').match(/\b\d+\b/g) || [];
-        const expCandidates = allNums.filter(n => n.length >= 7 && n.length <= 10);
-        if (expCandidates.length > 0) {
-          detectedExp = expCandidates[expCandidates.length - 1];
-          setExpVal(detectedExp);
-          expReason = `未直接抓到 EXP 關鍵字，透過全域掃描成功鎖定 7~10 位數長數字 [ ${detectedExp} ]`;
-        } else {
-          expReason = `找不到 "EXP" 關鍵字，且全域也掃不到 7~10 位數的經驗值數字 (圖片字型可能過於模糊)`;
-        }
+        setExpVal(expMatch[1]);
       }
 
-      // 📊 產生即時除錯報告面板
-      setScanDebugInfo(`
-        📊 【自動偵測詳細除錯報告】
-        --------------------------------------------------
-        📌 等級 (Lv) 狀態：
-           結果：${detectedLv ? `✅ 成功抓取 Lv.${detectedLv}` : '❌ 抓取失敗'}
-           原因：${lvReason}
-           
-        📌 經驗值 (EXP) 狀態：
-           結果：${detectedExp ? `✅ 成功抓取 ${Number(detectedExp).toLocaleString()} EXP` : '❌ 抓取失敗'}
-           原因：${expReason}
-        --------------------------------------------------
-        💡 OCR 實際讀到的原始文字片段：
-        "${text.replace(/\s+/g, ' ').substring(0, 150)}..."
-      `);
-
-      if (detectedLv || detectedExp) {
-        setMsg('✨ 自動偵測完成！請核對下方欄位數值是否正確。');
-      } else {
-        setMsg('⚠️ 自動偵測未能成功抓取數值，請參考上方除錯報告調整截圖或手動填入。');
-      }
+      setMsg('✨ 截圖解析完成！請核對下方欄位數值是否正確。');
 
     } catch (err) {
       console.error('OCR 錯誤:', err);
-      setScanDebugInfo(`❌ 發生嚴重錯誤：${err.message}`);
       setMsg('❌ 圖片解析失敗');
     } finally {
       setScanning(false);
@@ -438,20 +386,13 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後，下方會即時顯示**詳細除錯報告**與 OCR 實際讀到的文字！
+              💡 <strong>操作說明：</strong>上傳截圖後將自動抓取 LV 與 EXP，若有誤差可直接手動修改！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在強力解析截圖中的數值...</p>}
-
-            {/* 🔍 詳細除錯分析面板 */}
-            {scanDebugInfo && (
-              <div style={{ background: '#0f172a', color: '#38bdf8', padding: '14px', borderRadius: '8px', fontSize: '13px', whiteSpace: 'pre-line', marginBottom: '15px', fontFamily: 'monospace', border: '1px solid #475569' }}>
-                {scanDebugInfo}
-              </div>
-            )}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在解析截圖中的數值...</p>}
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
             <input 
