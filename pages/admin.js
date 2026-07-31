@@ -7,26 +7,127 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 經驗值對照與 120等後 1.05 倍成長公式 (正確版：基底 23478579，次方 lv - 120)
+// 🍁 Artale 120~200 等精準經驗值對照表（完全對應妳提供的官方/實際截圖數據）
+const EXACT_EXP_TABLE = {
+  120: 29715818,
+  121: 31344244,
+  122: 33061908,
+  123: 34873700,
+  124: 36784778,
+  125: 38800583,
+  126: 40926854,
+  127: 43169645,
+  128: 45535341,
+  129: 48030677,
+  130: 50662758,
+  131: 53439077,
+  132: 56367538,
+  133: 59456479,
+  134: 62714694,
+  135: 66151459,
+  136: 69776558,
+  137: 73600313,
+  138: 77633610,
+  139: 81887931,
+  140: 86375389,
+  141: 91108760,
+  142: 96101520,
+  143: 101367883,
+  144: 106922842,
+  145: 112782213,
+  146: 118962678,
+  147: 125481832,
+  148: 132358236,
+  149: 139611467,
+  150: 147262175,
+  151: 155332142,
+  152: 163844343,
+  153: 172823012,
+  154: 182293713,
+  155: 192283408,
+  156: 202820538,
+  157: 213935103,
+  158: 225658746,
+  159: 238024845,
+  160: 251068606,
+  161: 264827165,
+  162: 279339693,
+  163: 294647508,
+  164: 310794191,
+  165: 327825712,
+  166: 345790561,
+  167: 364739883,
+  168: 384727628,
+  169: 405810702,
+  170: 428049128,
+  171: 451506220,
+  172: 476248760,
+  173: 502347192,
+  174: 529875818,
+  175: 558913012,
+  176: 589541445,
+  177: 621848316,
+  178: 655925603,
+  179: 691870326,
+  180: 729784819,
+  181: 769777027,
+  182: 811960808,
+  183: 856456260,
+  184: 903390063,
+  185: 952895838,
+  186: 1005114529,
+  187: 1060194805,
+  188: 1118293480,
+  189: 1179575962,
+  190: 1244216724,
+  191: 1312399800,
+  192: 1384319309,
+  193: 1460180007,
+  194: 1540197871,
+  195: 1624600714,
+  196: 1713628833,
+  197: 1807535693,
+  198: 1906588648,
+  199: 2011069705,
+  200: 2121276324
+};
+
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
   if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
-  if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  if (lv <= 200) {
-    const baseExp120 = 23478579; // 120等真實需求量
-    return Math.floor(baseExp120 * Math.pow(1.05, lv - 120));
+  if (lv <= 119) return Math.floor(200000 * Math.pow(1.1, lv - 70));
+  if (EXACT_EXP_TABLE[lv]) {
+    return EXACT_EXP_TABLE[lv];
   }
   return 1000000000;
 }
 
-function getCumulativeExp(lv) {
-  let total = 0;
-  for (let i = 1; i < lv; i++) {
-    total += getExpRequiredForLevel(i);
+// 🎯 計算從個人起點出發到現今狀態的「實際成長經驗值」
+function calculateGrowthExp(baseline, current) {
+  if (!baseline || !current) return 0;
+  
+  const baseLv = Number(baseline.level);
+  const baseExp = Number(baseline.exp_val);
+  const currLv = Number(current.level);
+  const currExp = Number(current.exp_val);
+
+  if (baseLv === currLv) {
+    return currExp - baseExp >= 0 ? currExp - baseExp : 0;
   }
-  return total;
+
+  let totalGrowth = 0;
+  const baseLevelReq = getExpRequiredForLevel(baseLv);
+  totalGrowth += (baseLevelReq - baseExp);
+
+  for (let lv = baseLv + 1; lv < currLv; lv++) {
+    totalGrowth += getExpRequiredForLevel(lv);
+  }
+
+  totalGrowth += currExp;
+
+  return totalGrowth >= 0 ? totalGrowth : 0;
 }
 
 // 🎁 美化版獎品與贊助商排版
@@ -148,15 +249,13 @@ export default function Home() {
         const baseline = subs[0]; 
         const latest = subs[subs.length - 1];
 
-        const baselineTotal = Number(baseline.total_exp) || 0;
-        const latestTotal = Number(latest.total_exp) || 0;
-        const expGrowth = latestTotal - baselineTotal; 
+        const expGrowth = calculateGrowthExp(baseline, latest);
 
         return {
           char_id: id,
           level: latest.level,
           exp_val: latest.exp_val,
-          growth_exp: expGrowth >= 0 ? expGrowth : 0,
+          growth_exp: expGrowth,
           created_at: latest.created_at,
           submission_count: subs.length
         };
@@ -283,7 +382,6 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 嚴格 ID 交叉核對
         let isIdValid = false;
         if (loggedInUser) {
           const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
@@ -304,7 +402,6 @@ export default function Home() {
           return; 
         }
 
-        // 2. 等級強力抓取
         let foundLevel = '';
         const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
@@ -319,7 +416,6 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 3. 經驗值精準抓取
         let foundExp = '';
         const expMatch = text.match(/([0-9]{5,11})\s*\[/);
         if (expMatch && expMatch[1]) {
@@ -372,13 +468,11 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
-
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
         exp_val: inputExpNum,
-        total_exp: calculatedTotalExp,
+        total_exp: 0, 
         photo_url: photoUrl,
         is_manual_edited: isManualEdited,
         status: isManualEdited ? 'pending_review' : 'approved'
@@ -401,11 +495,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.16</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.22</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.16)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.22)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -444,7 +538,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.16 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>與 ID 嚴格核對結果！
+              💡 <strong>v3.22 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>，請核對等級與經驗值是否正確帶入！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
@@ -475,7 +569,7 @@ export default function Home() {
             )}
 
             {charNotice && (
-              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fff5f5', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#feb2b2'), color: charNotice.includes('✅') ? '#15803d' : '#c53030', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
@@ -506,13 +600,13 @@ export default function Home() {
               <div style={{ width: '100%', overflowX: 'auto' }}>
                 <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
                   {(() => {
-                    const maxExp = Math.max(...history.map(h => h.total_exp || 0));
-                    const minExp = Math.min(...history.map(h => h.total_exp || 0));
+                    const maxExp = Math.max(...history.map(h => h.exp_val || 0));
+                    const minExp = Math.min(...history.map(h => h.exp_val || 0));
                     const expRange = (maxExp - minExp) || 1;
                     
                     const points = history.map((h, index) => {
                       const x = 40 + (index / (history.length - 1)) * 420;
-                      const y = 140 - (((h.total_exp || 0) - minExp) / expRange) * 100;
+                      const y = 140 - (((h.exp_val || 0) - minExp) / expRange) * 100;
                       return `${x},${y}`;
                     }).join(' ');
 
@@ -521,7 +615,7 @@ export default function Home() {
                         <polyline fill="none" stroke="#2563eb" strokeWidth="3" points={points} />
                         {history.map((h, index) => {
                           const x = 40 + (index / (history.length - 1)) * 420;
-                          const y = 140 - (((h.total_exp || 0) - minExp) / expRange) * 100;
+                          const y = 140 - (((h.exp_val || 0) - minExp) / expRange) * 100;
                           const dateStr = h.created_at ? new Date(h.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) : `第${index+1}次`;
                           return (
                             <g key={index}>
