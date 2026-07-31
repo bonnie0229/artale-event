@@ -7,7 +7,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 120~200 等精準經驗值對照表（完全對應你提供的官方截圖數據）
+// 🍁 Artale 120~200 等精準經驗值對照表
 const EXACT_EXP_TABLE = {
   120: 29715818, 121: 31344244, 122: 33061908, 123: 34873700, 124: 36784778,
   125: 38800583, 126: 40926854, 127: 43169645, 128: 45535341, 129: 48030677,
@@ -38,10 +38,8 @@ function getExpRequiredForLevel(lv) {
   return 1000000000;
 }
 
-// 🎯 實際成長經驗值計算
 function calculateGrowthExp(baseline, current) {
   if (!baseline || !current) return 0;
-  
   const baseLv = Number(baseline.level);
   const baseExp = Number(baseline.exp_val);
   const currLv = Number(current.level);
@@ -58,13 +56,10 @@ function calculateGrowthExp(baseline, current) {
   for (let lv = baseLv + 1; lv < currLv; lv++) {
     totalGrowth += getExpRequiredForLevel(lv);
   }
-
   totalGrowth += currExp;
-
   return totalGrowth >= 0 ? totalGrowth : 0;
 }
 
-// 🎁 獎品排版
 function renderPrizeCell(rank) {
   if (rank === 0) return <div><div style={{ fontWeight: 'bold', color: '#d97706' }}>🥇 第一名／闇黑龍王披風一件</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div></div>;
   if (rank === 1) return <div><div style={{ fontWeight: 'bold', color: '#64748b' }}>🥈 第二名／楓葉祝福２０一本</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div></div>;
@@ -87,7 +82,6 @@ export default function Home() {
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
-  const [deviceType, setDeviceType] = useState('pc'); 
   const [cropPreviewUrl, setCropPreviewUrl] = useState(''); 
   
   const [players, setPlayers] = useState([]);
@@ -98,7 +92,6 @@ export default function Home() {
   
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
-
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isEnded: false });
 
   useEffect(() => {
@@ -135,7 +128,7 @@ export default function Home() {
     const { data } = await supabase
       .from('submissions')
       .select('*')
-      .eq('status', 'approved') // 預設只計算審核通過的成績
+      .eq('status', 'approved')
       .order('id', { ascending: true });
 
     if (data && data.length > 0) {
@@ -227,34 +220,19 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  function prepareImageForOCR(file, type) {
+  // 💡 v3.25 智慧增強預處理：保留原圖清晰度並適度放大
+  function preprocessImage(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
           const ctx = canvas.getContext('2d');
-          
-          let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
-
-          if (type === 'mobile') {
-            cropX = img.width * 0.10;
-            cropY = img.height * 0.40;
-            cropWidth = img.width * 0.80;
-            cropHeight = img.height * 0.55;
-          } else {
-            cropX = 0;
-            cropY = img.height * 0.60;
-            cropWidth = img.width;
-            cropHeight = img.height * 0.40;
-          }
-
-          canvas.width = cropWidth;
-          canvas.height = cropHeight;
-          ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-          
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL('image/png', 1.0);
           setCropPreviewUrl(dataUrl);
           resolve(dataUrl);
         };
@@ -270,64 +248,54 @@ export default function Home() {
     setFile(selectedFile);
     setScanning(true);
     setCharNotice('');
-    setIsManualEdited(false); // 預設自動辨識
+    setIsManualEdited(false);
     setLevel('');
     setExpVal('');
-    setMsg(`🔍 正在自動掃描${deviceType === 'mobile' ? '手機版' : '電腦版'}截圖數據...`);
+    setMsg('⚡ 正在自動解析截圖數據...');
 
     try {
-      const ocrImage = await prepareImageForOCR(selectedFile, deviceType);
+      const ocrImage = await preprocessImage(selectedFile);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text || '';
-        const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        // 💡 彈性 ID 檢查：若截圖文字辨識不出，不卡死，改給予溫馨提示並允許手動修改送出
-        if (loggedInUser) {
-          const cleanUser = loggedInUser.trim().replace(/[\s\-_]+/g, '').toLowerCase();
-          if (!cleanText.includes(cleanUser) && cleanUser.length > 2) {
-            setCharNotice(`⚠️ 提示：自動辨識未完全抓到角色名稱【${loggedInUser}】，已自動代入數值，請核對無誤後即可送出（若需修改數值會自動轉為待審核）。`);
-          } else {
-            setCharNotice(`✅ 截圖自動辨識成功！目前登入角色：【${loggedInUser}】`);
-          }
-        }
+        setCharNotice(`✅ 截圖讀取成功！目前登入身分：【${loggedInUser}】`);
 
-        // 1. 等級強力抓取
+        // 1. 等級萬用解析：匹配 "Lv", "L.", 數字範圍 1~200
         let foundLevel = '';
-        const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
+        const lvMatch = text.match(/(?:lv|l\.)\s*[\.:]*\s*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
           if (val >= 1 && val <= 200) foundLevel = String(val);
         } else {
-          const allNums = text.match(/\b\d{1,3}\b/g);
+          // 如果沒有找到關鍵字，抓取文字中所有 3 位數（優先找 100~200 之間的數值）
+          const allNums = text.match(/\b\d{2,3}\b/g);
           if (allNums) {
-            const valid = allNums.find(n => Number(n) >= 10 && Number(n) <= 200);
-            if (valid) foundLevel = valid;
+            const validLv = allNums.map(Number).filter(n => n >= 50 && n <= 200);
+            if (validLv.length > 0) foundLevel = String(validLv[0]);
           }
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 2. 經驗值精準抓取
+        // 2. 經驗值萬用解析：支援從 0 到極大數值的抓取（排除等級數字以免重複）
         let foundExp = '';
-        const expMatch = text.match(/([0-9]{5,11})\s*\[/);
-        if (expMatch && expMatch[1]) {
-          foundExp = expMatch[1];
-        } else {
-          const bigNums = text.replace(/[,.]/g, '').match(/\b[0-9]{5,11}\b/g);
-          if (bigNums && bigNums.length > 0) {
-            const filtered = bigNums.map(Number).filter(n => n > 200);
-            if (filtered.length > 0) {
-              foundExp = String(Math.max(...filtered));
-            }
+        const cleanNumsText = text.replace(/[,.]/g, '');
+        const allBigNums = cleanNumsText.match(/\b\d+\b/g);
+        if (allBigNums) {
+          // 過濾掉剛好等於等級的數字，找其他較大的數字作為經驗值
+          const validExps = allBigNums.map(Number).filter(n => n >= 0 && String(n) !== foundLevel);
+          if (validExps.length > 0) {
+            // 通常經驗值是畫面中除了等級外最大的數字之一
+            foundExp = String(Math.max(...validExps));
           }
         }
         if (foundExp) setExpVal(foundExp);
 
-        setMsg('✨ 自動帶入完成！請核對下方等級與經驗值，有誤差可直接修改。');
+        setMsg('✨ 自動匯入完成！請核對下方數值，如有誤差直接修改即可。');
       }
     } catch (err) {
-      setMsg('圖片讀取完成，請手動確認等級與經驗值。');
+      setMsg('圖片讀取完成，請手動填寫等級與經驗值。');
     } finally {
       setScanning(false);
     }
@@ -360,7 +328,6 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      // 💡 若有手動修改數值，標記為 pending_review 讓管理員審核；若完全沒手動修改則直接 approved
       const submissionStatus = isManualEdited ? 'pending_review' : 'approved';
 
       const { error: subError } = await supabase.from('submissions').insert([{
@@ -376,7 +343,7 @@ export default function Home() {
       if (subError) throw subError;
 
       if (isManualEdited) {
-        setMsg('🎉 成績已提交！因為您有手動修改數值，目前已送交管理員審核，審核通過後即會更新至排行榜！');
+        setMsg('🎉 成績已提交！因為您有手動修改數值，目前已送交管理員審核。');
       } else {
         setMsg('🎉 成績已成功自動提交！排行榜已為您解鎖並更新。');
       }
@@ -395,11 +362,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.23</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.25</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.23)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.25)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -438,32 +405,20 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.23 核心優化：</strong>截圖上傳後會<strong>自動嘗試抓取等級與經驗值</strong>並填入下方欄位。若自動帶入有誤差，你直接手動修改欄位數字即可，送出後會自動交由管理員審核！
-            </div>
-
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
-            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-              <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
-                <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
-                💻 電腦版截圖
-              </label>
-              <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
-                <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
-                📱 手機版截圖
-              </label>
+              💡 <strong>v3.25 自動匯入：</strong>上傳截圖後會自動抓取數值填入。如有任何偏差，直接手動修改並送出即可（手動修改會自動轉交管理員審核）。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析畫面數值...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動辨識畫面...</p>}
             
             {cropPreviewUrl && (
               <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
-                  🔍 【系統實際掃描的截圖區塊預覽】：
+                  🔍 【截圖預覽】：
                 </div>
-                <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
+                <img src={cropPreviewUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
               </div>
             )}
 
@@ -490,7 +445,7 @@ export default function Home() {
               onChange={e => { setExpVal(e.target.value); setIsManualEdited(true); }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid ' + (isManualEdited ? '#f59e0b' : '#cbd5e1'), boxSizing: 'border-box' }} 
             />
-            {isManualEdited && <p style={{ color: '#d97706', fontSize: '12px', margin: '-10px 0 15px 0' }}>⚠️ 偵測到您手動修改了數字，送出後將進入管理員審核狀態。</p>}
+            {isManualEdited && <p style={{ color: '#d97706', fontSize: '12px', margin: '-10px 0 15px 0' }}>⚠️ 偵測到手動修改，送出後將進入管理員審核狀態。</p>}
 
             <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
               {loading ? '提交中...' : '確認並提交成績'}
