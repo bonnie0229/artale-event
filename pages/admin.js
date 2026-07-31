@@ -252,7 +252,7 @@ export default function Home() {
     });
   }
 
-  // 🎯 【精準自動抓取與詳細除錯回報機制】
+  // 🎯 【高精度自動抓取與詳細除錯回報機制】
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -277,7 +277,7 @@ export default function Home() {
 
       const ocrImage = await prepareImageForOCR(selectedFile);
       const result = await window.Tesseract.recognize(ocrImage, 'eng');
-      const text = result.data.text || '';
+      const text = result.data.text || ''; // 🛠️ 確保正確對應到 result.data.text
       
       console.log('=== OCR 原始辨識文字 ===\n', text);
 
@@ -438,7 +438,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後，下方會即時顯示**詳細除錯報告**，清楚告訴您自動抓取的成功與失敗原因！
+              💡 <strong>操作說明：</strong>上傳截圖後，下方會即時顯示**詳細除錯報告**與 OCR 實際讀到的文字！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
