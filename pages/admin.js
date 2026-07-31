@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { createClient } from '@supabase/supabase-js';
 
@@ -86,10 +86,13 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [charNotice, setCharNotice] = useState('');
   const [isManualEdited, setIsManualEdited] = useState(false);
+  const [idMismatch, setIdMismatch] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isEnded: false });
+  
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const targetDate = new Date('2026-09-08T07:59:00+08:00');
@@ -217,7 +220,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 精準裁切：電腦版從左下角起算橫向 90%、下半部 50%；手機版涵蓋下方 60%
+  // 🎯 v3.33 最終正確裁切：電腦版與手機版狀態列全部都在畫面下方！
   function prepareCropImage(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -230,17 +233,17 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            // 手機版：下方 60% 區域
-            cropX = 0;
-            cropY = img.height * 0.40;
-            cropWidth = img.width;
-            cropHeight = img.height * 0.60;
+            // 手機版：精準鎖定畫面正下方的浮動狀態框
+            cropX = img.width * 0.25;
+            cropY = img.height * 0.70;
+            cropWidth = img.width * 0.50;
+            cropHeight = img.height * 0.30;
           } else {
-            // 電腦版：左下角起算，橫向 90%、下半部 50%
+            // 電腦版：精準鎖定畫面底部的狀態列橫條區（包含左側等級與右側經驗值）
             cropX = 0;
-            cropY = img.height * 0.50;
-            cropWidth = img.width * 0.90;
-            cropHeight = img.height * 0.50;
+            cropY = img.height * 0.70;
+            cropWidth = img.width * 0.70;
+            cropHeight = img.height * 0.30;
           }
 
           canvas.width = cropWidth;
@@ -262,12 +265,12 @@ export default function Home() {
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    // 明確告知 ID 是直接對應目前登入帳號，不透過 OCR 盲猜
-    setCharNotice(`✅ 提交身分：【${loggedInUser}】（系統直接綁定您目前登入的帳號，不掃描截圖 ID）`);
+    setCharNotice(`✅ 提交身分：【${loggedInUser}】（系統比對中...）`);
     setIsManualEdited(false);
+    setIdMismatch(false);
     setLevel('');
     setExpVal('');
-    setMsg(`⚡ 正在掃描${deviceType === 'mobile' ? '手機版下方' : '電腦版左下角 (橫向90%)'}區塊...`);
+    setMsg(`⚡ 正在掃描${deviceType === 'mobile' ? '手機版下方狀態框' : '電腦版底部狀態列'}...`);
 
     try {
       const ocrImage = await prepareCropImage(selectedFile, deviceType);
@@ -276,7 +279,19 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text || '';
 
-        // 1. 等級精準抓取：尋找 120~200 之間的數值
+        // 1. 智慧 ID 檢核：檢查截圖內是否有出現登入的使用者名稱
+        const cleanLoggedUser = loggedInUser.trim().toLowerCase();
+        const cleanOcrText = text.toLowerCase();
+        const hasIdInText = cleanOcrText.includes(cleanLoggedUser);
+        if (!hasIdInText && cleanLoggedUser.length > 1) {
+          setIdMismatch(true);
+          setIsManualEdited(true);
+          setCharNotice(`⚠️ 提示：在截圖底部未偵測到您的 ID【${loggedInUser}】，為確保公平，送出後將自動轉交管理員審核！`);
+        } else {
+          setCharNotice(`✅ 驗證通過：截圖與登入身分【${loggedInUser}】相符！`);
+        }
+
+        // 2. 等級精準抓取：尋找 120~200 之間的 3 位數
         let foundLevel = '';
         const allNums = text.match(/\b\d{3}\b/g);
         if (allNums) {
@@ -285,7 +300,7 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 2. 經驗值精準抓取：抓取大於 200 的數字（過濾掉等級）
+        // 3. 經驗值精準抓取：抓取大於 200 的數字（過濾掉等級）
         let foundExp = '';
         const cleanNumsText = text.replace(/[,.]/g, '');
         const bigNums = cleanNumsText.match(/\b\d+\b/g);
@@ -297,7 +312,7 @@ export default function Home() {
         }
         if (foundExp) setExpVal(foundExp);
 
-        setMsg('✨ 自動匯入完成！請核對下方數值，如有誤差直接修改即可。');
+        setMsg('✨ 掃描解析完成！請核對下方數值，如有誤差可直接修改。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動填寫等級與經驗值。');
@@ -333,28 +348,33 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      const submissionStatus = isManualEdited ? 'pending_review' : 'approved';
+      const submissionStatus = (isManualEdited || idMismatch) ? 'pending_review' : 'approved';
 
       const { error: subError } = await supabase.from('submissions').insert([{
-        char_id: loggedInUser.trim(), // 強制綁定目前登入帳號
+        char_id: loggedInUser.trim(),
         level: targetLevel,
         exp_val: inputExpNum,
         total_exp: 0, 
         photo_url: photoUrl,
-        is_manual_edited: isManualEdited,
+        is_manual_edited: (isManualEdited || idMismatch),
         status: submissionStatus
       }]);
 
       if (subError) throw subError;
 
-      if (isManualEdited) {
-        setMsg('🎉 成績已提交！因為您有手動修改數值，目前已送交管理員審核。');
+      if (submissionStatus === 'pending_review') {
+        setMsg('🎉 成績已提交！因資料需人工覆核（或手動修改），目前已送交管理員審核中。');
       } else {
         setMsg('🎉 成績已成功自動提交！排行榜已為您解鎖並更新。');
       }
       
       setHasSubmitted(true);
       setIsManualEdited(false);
+      setIdMismatch(false);
+      setFile(null);
+      setCropPreviewUrl('');
+      if (fileInputRef.current) fileInputRef.current.value = ''; 
+      
       fetchLeaderboard();
       fetchUserHistory(loggedInUser);
     } catch (err) {
@@ -367,11 +387,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.31</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.33</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.31)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.33)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -410,37 +430,37 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.31 精準裁切版：</strong>電腦版固定掃描左下角（橫向 90%），手機版掃描下方區域。ID 直接綁定您登入的身分。若有誤差手動修改即可。
+              💡 <strong>v3.33 底部狀態區精準鎖定：</strong>電腦版與手機版全面修正為掃描**畫面下方**的狀態列。系統會自動核對 ID 與等級，有誤會轉交管理員審核。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
             <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
-                💻 電腦版截圖 (左下角 90%)
+                💻 電腦版截圖 (底部狀態列)
               </label>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
-                📱 手機版截圖 (下方區域)
+                📱 手機版截圖 (下方中央狀態框)
               </label>
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
-            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在掃描指定區域...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在掃描底部狀態列中...</p>}
             
             {cropPreviewUrl && (
               <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
-                  🔍 【裁切區域預覽】：
+                  🔍 【底部狀態列裁切預覽（請確認是否有包含等級與經驗值）】：
                 </div>
                 <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
               </div>
             )}
 
             {charNotice && (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: idMismatch ? '#fef2f2' : '#f0fdf4', border: '1px solid ' + (idMismatch ? '#fecaca' : '#bbf7d0'), color: idMismatch ? '#991b1b' : '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
@@ -462,7 +482,7 @@ export default function Home() {
               onChange={e => { setExpVal(e.target.value); setIsManualEdited(true); }} 
               style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid ' + (isManualEdited ? '#f59e0b' : '#cbd5e1'), boxSizing: 'border-box' }} 
             />
-            {isManualEdited && <p style={{ color: '#d97706', fontSize: '12px', margin: '-10px 0 15px 0' }}>⚠️ 偵測到手動修改，送出後將進入管理員審核狀態。</p>}
+            {isManualEdited && <p style={{ color: '#d97706', fontSize: '12px', margin: '-10px 0 15px 0' }}>⚠️ 偵測到手動修改或 ID 需人工核對，送出後將自動進入管理員審核佇列。</p>}
 
             <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
               {loading ? '提交中...' : '確認並提交成績'}
