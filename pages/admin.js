@@ -6,13 +6,16 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
+// 🍁 Artale 120~200 級精準 1.05 倍對照
 function getExpRequiredForLevel(lv) {
   if (lv < 120) return 0;
   return Math.floor(29715818 * Math.pow(1.05, lv - 120));
 }
 
+// 🎯 計算兩筆紀錄之間的經驗成長量
 function calculateExpBetween(prev, curr) {
   if (!prev || !curr) return 0;
   const baseLv = Number(prev.level);
@@ -66,7 +69,7 @@ export default function Home() {
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
-  const [scanDebugInfo, setScanDebugInfo] = useState(''); // 🔍 詳細除錯分析面板
+  const [scanDebugInfo, setScanDebugInfo] = useState(''); // 🔍 詳細除錯回報面板
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -219,6 +222,7 @@ export default function Home() {
     }
   }
 
+  // 🎯 圖片前置處理與縮放
   function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -248,13 +252,13 @@ export default function Home() {
     });
   }
 
-  // 🎯 【高精度自動抓取與詳細除錯回饋】
+  // 🎯 【精準自動抓取與詳細除錯回報機制】
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setMsg('🔍 正在強效解析截圖...');
+    setMsg('🔍 正在強力解析截圖...');
     setScanDebugInfo('⏳ 正在啟動 OCR 引擎讀取圖面文字...');
 
     try {
@@ -289,7 +293,7 @@ export default function Home() {
         if (val >= 120 && val <= 200) {
           detectedLv = lvMatch[1];
           setLevel(detectedLv);
-          lvReason = `成功匹配關鍵字 "Lv/Level" 後方的數字 [ ${detectedLv} ]`;
+          lvReason = `成功匹配關鍵字 "Lv/Level" 後方的有效等級 [ ${detectedLv} ]`;
         } else {
           lvReason = `抓到了數字 "${lvMatch[1]}"，但不在 120~200 有效等級範圍內`;
         }
@@ -312,11 +316,11 @@ export default function Home() {
           setExpVal(detectedExp);
           expReason = `未直接抓到 EXP 關鍵字，透過全域掃描成功鎖定 7~10 位數長數字 [ ${detectedExp} ]`;
         } else {
-          expReason = `找不到 "EXP" 關鍵字，且全域也掃不到 7~10 位數的經驗值數字 (可能圖片太模糊或字型糊成一片)`;
+          expReason = `找不到 "EXP" 關鍵字，且全域也掃不到 7~10 位數的經驗值數字 (圖片字型可能過於模糊)`;
         }
       }
 
-      // 📊 產生即時除錯報告，讓您一眼看出為什麼成功或為什麼失敗
+      // 📊 產生即時除錯報告面板
       setScanDebugInfo(`
         📊 【自動偵測詳細除錯報告】
         --------------------------------------------------
@@ -333,7 +337,7 @@ export default function Home() {
       `);
 
       if (detectedLv || detectedExp) {
-        setMsg('✨ 自動偵測完成！');
+        setMsg('✨ 自動偵測完成！請核對下方欄位數值是否正確。');
       } else {
         setMsg('⚠️ 自動偵測未能成功抓取數值，請參考上方除錯報告調整截圖或手動填入。');
       }
@@ -434,7 +438,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳截圖後，下方會即時顯示**詳細除錯報告**，清楚告訴您為什麼抓到或為什麼沒抓到！
+              💡 <strong>操作說明：</strong>上傳截圖後，下方會即時顯示**詳細除錯報告**，清楚告訴您自動抓取的成功與失敗原因！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
@@ -442,7 +446,7 @@ export default function Home() {
             
             {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在強力解析截圖中的數值...</p>}
 
-            {/* 🔍 詳細除錯分析面板：顯示成功/失敗原因與 OCR 原始文字 */}
+            {/* 🔍 詳細除錯分析面板 */}
             {scanDebugInfo && (
               <div style={{ background: '#0f172a', color: '#38bdf8', padding: '14px', borderRadius: '8px', fontSize: '13px', whiteSpace: 'pre-line', marginBottom: '15px', fontFamily: 'monospace', border: '1px solid #475569' }}>
                 {scanDebugInfo}
