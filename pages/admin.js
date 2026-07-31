@@ -290,14 +290,12 @@ export default function Home() {
           setCharNotice(`✅ 驗證通過：截圖與登入身分【${loggedInUser}】相符！`);
         }
 
-        // 2. 🔑 像素字體等級智慧轉換抓取 (v3.42 專用)
+        // 2. 🔑 像素字體等級智慧轉換抓取 (v3.43 修正版：涵蓋字母 Y)
         let foundLevel = '';
-        // 抓取 LV 後方緊接著的 3 個字元（不管是數字還是被誤判的字母）
-        const lvMatch = cleanText.match(/(?:LV|等級).{0,5}?([0-9IilTRBEOA-Z]{3})/);
+        const lvMatch = cleanText.match(/(?:LV|等級).{0,5}?([A-Z0-9Iil|]{3})/);
         
         if (lvMatch) {
           let token = lvMatch[1];
-          // 像素字體英數對照翻譯（把 OCR 常見的錯字轉回數字）
           token = token
             .replace(/[Iil|]/g, '1')
             .replace(/[TR]/g, '7')
@@ -316,7 +314,6 @@ export default function Home() {
           }
         }
 
-        // 備用防護：若特徵沒對到，尋找 120~200 的有效純數字
         if (!foundLevel) {
           const allNums = cleanText.match(/\d+/g);
           if (allNums) {
@@ -422,11 +419,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.42</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.43</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.42)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.43)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -465,7 +462,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.42 像素字體智慧修正版：</strong>完美解決 OCR 將等級數字（如 173）誤認為英文字母（如 TRY）的辨識盲點！
+              💡 <strong>v3.43 等級捕獲修正版：</strong>已補全字母白名單，完美對應 `TRY` 等像素字體轉譯！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
