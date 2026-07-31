@@ -217,8 +217,8 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 v3.29 雙區塊拼貼處理：PC版同時抓取「左上側（等級）」與「右下角（經驗值）」並拼貼在一起掃描
-  function prepareMultiRegionImage(file, type) {
+  // 🎯 固定區域裁切：電腦版掃描「左下方」、手機版掃描「中間下方」
+  function prepareCropImage(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -227,31 +227,27 @@ export default function Home() {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          const procCanvas = document.createElement('canvas');
-          const pCtx = procCanvas.getContext('2d');
+          let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
-          if (type === 'pc') {
-            // PC版：等級在左側/左上 (x: 0~55%, y: 0~75%)，經驗值在右下 (x: 35~100%, y: 50~100%)
-            const z1X = 0, z1Y = 0, z1W = img.width * 0.55, z1H = img.height * 0.75;
-            const z2X = img.width * 0.35, z2Y = img.height * 0.50, z2W = img.width * 0.65, z2H = img.height * 0.50;
-
-            procCanvas.width = Math.max(z1W, z2W);
-            procCanvas.height = z1H + z2H;
-
-            pCtx.fillStyle = '#111';
-            pCtx.fillRect(0, 0, procCanvas.width, procCanvas.height);
-
-            pCtx.drawImage(img, z1X, z1Y, z1W, z1H, 0, 0, z1W, z1H);
-            pCtx.drawImage(img, z2X, z2Y, z2W, z2H, 0, z1H, z2W, z2H);
+          if (type === 'mobile') {
+            // 手機版：固定掃描中間下方
+            cropX = img.width * 0.20;
+            cropY = img.height * 0.50;
+            cropWidth = img.width * 0.60;
+            cropHeight = img.height * 0.50;
           } else {
-            // 手機版：下方區域
-            const mX = 0, mY = img.height * 0.40, mW = img.width, mH = img.height * 0.60;
-            procCanvas.width = mW;
-            procCanvas.height = mH;
-            pCtx.drawImage(img, mX, mY, mW, mH, 0, 0, mW, mH);
+            // 電腦版：固定掃描左下方
+            cropX = 0;
+            cropY = img.height * 0.50;
+            cropWidth = img.width * 0.50;
+            cropHeight = img.height * 0.50;
           }
 
-          const dataUrl = procCanvas.toDataURL('image/png', 1.0);
+          canvas.width = cropWidth;
+          canvas.height = cropHeight;
+          ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+          
+          const dataUrl = canvas.toDataURL('image/png', 1.0);
           setCropPreviewUrl(dataUrl);
           resolve(dataUrl);
         };
@@ -270,16 +266,16 @@ export default function Home() {
     setIsManualEdited(false);
     setLevel('');
     setExpVal('');
-    setMsg(`⚡ 正在進行${deviceType === 'mobile' ? '手機版' : 'PC雙區塊'}智能解析...`);
+    setMsg(`⚡ 正在掃描${deviceType === 'mobile' ? '手機版中間下方' : '電腦版左下方'}區塊...`);
 
     try {
-      const ocrImage = await prepareMultiRegionImage(selectedFile, deviceType);
+      const ocrImage = await prepareCropImage(selectedFile, deviceType);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text || '';
 
-        // 1. 等級精準提取：尋找 120 ~ 200 之間的 3 位數
+        // 1. 等級精準抓取：尋找 120~200 之間的數值
         let foundLevel = '';
         const allNums = text.match(/\b\d{3}\b/g);
         if (allNums) {
@@ -288,10 +284,10 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 2. 經驗值精準提取：抓取 5 位數以上大數字（排除等級）
+        // 2. 經驗值精準抓取：抓取大於 200 的數字（過濾掉等級）
         let foundExp = '';
         const cleanNumsText = text.replace(/[,.]/g, '');
-        const bigNums = cleanNumsText.match(/\b\d{5,11}\b/g);
+        const bigNums = cleanNumsText.match(/\b\d+\b/g);
         if (bigNums) {
           const validExps = bigNums.map(Number).filter(n => n > 200 && String(n) !== foundLevel);
           if (validExps.length > 0) {
@@ -300,7 +296,7 @@ export default function Home() {
         }
         if (foundExp) setExpVal(foundExp);
 
-        setMsg('✨ 自動解析完成！請核對下方數值，如有誤差直接修改即可。');
+        setMsg('✨ 自動匯入完成！請核對下方數值，如有誤差直接修改即可。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動填寫等級與經驗值。');
@@ -370,11 +366,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.29</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.30</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.29)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.30)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -413,30 +409,30 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.29 雙區塊辨識：</strong>PC版自動同時擷取「左側等級區」與「右下經驗區」進行拼貼掃描，ID 直接綁定您登入的身分。若有誤差手動修改即可。
+              💡 <strong>v3.30 固定區域版：</strong>電腦版固定掃描左下方，手機版固定掃描中間下方。ID 直接綁定您登入的身分。若有誤差手動修改即可。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
             <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
-                💻 電腦版截圖
+                💻 電腦版截圖 (左下方)
               </label>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
-                📱 手機版截圖
+                📱 手機版截圖 (中間下方)
               </label>
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在進行雙區塊拼貼與掃描中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在掃描指定區域...</p>}
             
             {cropPreviewUrl && (
               <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
-                  🔍 【雙區塊拼貼預覽（同時包含等級區與經驗區）】：
+                  🔍 【裁切區域預覽】：
                 </div>
                 <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
               </div>
