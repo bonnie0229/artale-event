@@ -29,17 +29,47 @@ function getCumulativeExp(lv) {
   return total;
 }
 
-// 🎁 指定名次獎勵標籤
-function getPrizeBadge(rank) {
-  if (rank === 0) return '🥇 第一名／闇黑龍王披風一件（美國阿翔贊助）';
-  if (rank === 1) return '🥈 第二名／楓葉祝福２０一本（美國阿翔贊助）';
-  if (rank === 2) return '🥉 第三名／闇黑龍王項鍊一條（美國阿翔贊助）';
-  if (rank === 3) return '🏅 第四名／雪花 300';
-  if (rank === 4) return '🏅 第五名／突襲劵 14 張（夏日活動贊助商贊助）';
-  if (rank >= 5 && rank <= 13) return '🏅 第六~十四名／突襲劵 7 張（夏日活動贊助商贊助）';
-  if (rank === 14) return '🏅 第十五名／本人堅持送商城寵物一隻';
-  if (rank >= 15 && rank <= 19) return '🏅 第十六~二十名／雪花 50';
-  return '🎗️ 努力參賽獎';
+// 🎁 美化版獎品與贊助商排版
+function renderPrizeCell(rank) {
+  if (rank === 0) return (
+    <div>
+      <div style={{ fontWeight: 'bold', color: '#d97706' }}>🥇 第一名／闇黑龍王披風一件</div>
+      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div>
+    </div>
+  );
+  if (rank === 1) return (
+    <div>
+      <div style={{ fontWeight: 'bold', color: '#64748b' }}>🥈 第二名／楓葉祝福２０一本</div>
+      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div>
+    </div>
+  );
+  if (rank === 2) return (
+    <div>
+      <div style={{ fontWeight: 'bold', color: '#b45309' }}>🥉 第三名／闇黑龍王項鍊一條</div>
+      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div>
+    </div>
+  );
+  if (rank === 3) return <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第四名／雪花 300</div>;
+  if (rank === 4) return (
+    <div>
+      <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第五名／突襲劵 14 張</div>
+      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>夏日活動贊助商贊助</div>
+    </div>
+  );
+  if (rank >= 5 && rank <= 13) return (
+    <div>
+      <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第六~十四名／突襲劵 7 張</div>
+      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>夏日活動贊助商贊助</div>
+    </div>
+  );
+  if (rank === 14) return (
+    <div>
+      <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第十五名／商城寵物一隻</div>
+      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>本人堅持送</div>
+    </div>
+  );
+  if (rank >= 15 && rank <= 19) return <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第十六~二十名／雪花 50</div>;
+  return <div style={{ fontWeight: 'bold', color: '#64748b' }}>🎗️ 努力參賽獎</div>;
 }
 
 export default function Home() {
@@ -52,7 +82,8 @@ export default function Home() {
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
-  const [deviceType, setDeviceType] = useState('pc'); // 預設電腦版 'pc' 或 'mobile'
+  const [deviceType, setDeviceType] = useState('pc'); 
+  const [cropPreviewUrl, setCropPreviewUrl] = useState(''); // 🔍 裁切畫面預覽 State
   
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
@@ -63,7 +94,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
-  // ⏳ 活動倒數計時器狀態 (截止時間：2026/09/08 07:59)
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isEnded: false });
 
   useEffect(() => {
@@ -198,7 +228,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 v3.4 修正版裁切邏輯：電腦版完整涵蓋底部到 100%，支援全螢幕與視窗化
+  // 🎯 裁切邏輯並產生 Debug 預覽圖
   function prepareImageForOCR(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -217,18 +247,20 @@ export default function Home() {
             cropWidth = img.width * 0.50;
             cropHeight = img.height * 0.35;
           } else {
-            // 電腦版：下方狀態列 (X: 0%~100%, Y: 68%~100% 完整涵蓋全螢幕與視窗化底部)
+            // 電腦版：下方狀態列 (X: 0%~100%, Y: 65%~100%)
             cropX = 0;
-            cropY = img.height * 0.68;
+            cropY = img.height * 0.65;
             cropWidth = img.width;
-            cropHeight = img.height * 0.32;
+            cropHeight = img.height * 0.35;
           }
 
           canvas.width = cropWidth;
           canvas.height = cropHeight;
           ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
           
-          resolve(canvas.toDataURL('image/jpeg', 0.95));
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          setCropPreviewUrl(dataUrl); // 儲存預覽圖供介面顯示
+          resolve(dataUrl);
         };
         img.src = e.target.result;
       };
@@ -236,7 +268,7 @@ export default function Home() {
     });
   }
 
-  // 📸 v3.4 智慧區塊 OCR 掃描
+  // 📸 智慧區塊 OCR 掃描
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -253,32 +285,37 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 精準抓取等級 (LV)
-        const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i) || text.match(/1\s*[6-8]\s*\d/i);
+        // 1. 等級抓取
+        const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
-          setLevel(lvMatch[1]);
-        } else {
-          const nums = text.match(/\d{2,3}/g);
-          if (nums && nums.length > 0) {
-            const possibleLv = nums.find(n => Number(n) >= 10 && Number(n) <= 200);
-            if (possibleLv) setLevel(possibleLv);
+          const val = Number(lvMatch[1]);
+          if (val >= 1 && val <= 200) {
+            setLevel(String(val));
           }
-        }
-
-        // 2. 精準抓取經驗值 (EXP)
-        const expRegex = /(?:EXP[\s\.:]*|\[)?([0-9]{7,10})(?:\[|%|$)/i;
-        const expMatch = text.match(expRegex);
-        if (expMatch && expMatch[1]) {
-          setExpVal(expMatch[1]);
         } else {
-          const allNums = text.match(/\d{7,10}/g);
+          const allNums = text.match(/\b\d{1,3}\b/g);
           if (allNums && allNums.length > 0) {
-            setExpVal(allNums[0]);
+            const validLv = allNums.find(n => Number(n) >= 10 && Number(n) <= 200);
+            if (validLv) setLevel(validLv);
           }
         }
 
-        setCharNotice(`✅ 已完成${deviceType === 'mobile' ? '手機版' : '電腦版'}區塊辨識，請核對下方數值！`);
-        setMsg('✨ 辨識完成！');
+        // 2. 經驗值抓取
+        const expMatch = text.match(/(?:[0-9]{7,10})/);
+        if (expMatch) {
+          setExpVal(expMatch[0]);
+        } else {
+          const allBigNums = text.match(/\d{7,10}/g);
+          if (allBigNums && allBigNums.length > 0) {
+            setExpVal(allBigNums[0]);
+          }
+        }
+
+        if (loggedInUser) {
+          setCharNotice(`✅ 已自動帶入目前登入角色：${loggedInUser}，請確認下方預覽圖與數值是否正確！`);
+        }
+
+        setMsg('✨ 辨識完成！請核對下方數值與預覽圖。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動確認等級與經驗值。');
@@ -314,7 +351,6 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
-      // 自動計算總累積經驗值（包含 120等後 1.05倍遞增）
       const calculatedTotalExp = getCumulativeExp(targetLevel) + inputExpNum;
 
       const { error: subError } = await supabase.from('submissions').insert([{
@@ -344,11 +380,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.4</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.8</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.4)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.8)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -387,18 +423,18 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.4 操作說明：</strong>請選擇你是<strong>電腦版</strong>或<strong>手機版</strong>截圖（支援全螢幕與視窗化），系統會自動抓取完整底部狀態列進行辨識！
+              💡 <strong>v3.8 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>，讓你知道程式有沒有確實對準狀態列！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
             <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
-                💻 電腦版截圖 (支援全螢幕/視窗化底部)
+                💻 電腦版截圖
               </label>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
-                📱 手機版截圖 (中間下方狀態框)
+                📱 手機版截圖
               </label>
             </div>
 
@@ -407,6 +443,16 @@ export default function Home() {
             
             {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在智慧掃描指定裝置區塊...</p>}
             
+            {/* 🔍 裁切即時預覽區塊 (Debug Preview) */}
+            {cropPreviewUrl && (
+              <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
+                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
+                  🔍 【系統實際掃描的截圖區塊預覽】請確認是否成功對準狀態列：
+                </div>
+                <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
+              </div>
+            )}
+
             {charNotice && (
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
@@ -486,12 +532,12 @@ export default function Home() {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ padding: '12px 8px' }}>名次</th>
-                <th style={{ padding: '12px 8px' }}>角色名稱</th>
-                <th style={{ padding: '12px 8px' }}>當前等級</th>
-                <th style={{ padding: '12px 8px' }}>累積成長經驗值 (EXP)</th>
-                <th style={{ padding: '12px 8px' }}>對應獎品</th>
-                <th style={{ padding: '12px 8px' }}>更新時間</th>
+                <th style={{ padding: '12px 8px', width: '12%' }}>名次</th>
+                <th style={{ padding: '12px 8px', width: '22%' }}>角色名稱</th>
+                <th style={{ padding: '12px 8px', width: '12%' }}>當前等級</th>
+                <th style={{ padding: '12px 8px', width: '18%' }}>累積成長經驗值</th>
+                <th style={{ padding: '12px 8px', width: '24%' }}>對應獎品</th>
+                <th style={{ padding: '12px 8px', width: '12%' }}>更新時間</th>
               </tr>
             </thead>
             <tbody>
@@ -505,15 +551,17 @@ export default function Home() {
                       <td style={{ padding: '12px 8px', fontWeight: 'bold', color: idx === 0 ? '#d97706' : idx === 1 ? '#64748b' : idx === 2 ? '#b45309' : '#334155' }}>
                         {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
                       </td>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a' }}>{p.char_id}</td>
+                      <td style={{ padding: '12px 8px', fontWeight: 'bold', color: '#0f172a', maxWidth: '140px', wordBreak: 'break-all', fontSize: '13px', lineHeight: '1.3' }}>
+                        {p.char_id}
+                      </td>
                       <td style={{ padding: '12px 8px' }}>Lv.{p.level}</td>
                       <td style={{ padding: '12px 8px', color: '#16a34a', fontWeight: 'bold' }}>
                         +{Number(p.growth_exp).toLocaleString()}
                       </td>
-                      <td style={{ padding: '12px 8px', fontWeight: 'bold', fontSize: '13px', color: '#0284c7' }}>
-                        {getPrizeBadge(idx)}
+                      <td style={{ padding: '12px 8px', fontSize: '13px' }}>
+                        {renderPrizeCell(idx)}
                       </td>
-                      <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '13px' }}>⏱️ {timeStr}</td>
+                      <td style={{ padding: '12px 8px', color: '#64748b', fontSize: '12px' }}>⏱️ {timeStr}</td>
                     </tr>
                   );
                 })
