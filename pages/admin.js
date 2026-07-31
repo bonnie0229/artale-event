@@ -7,88 +7,24 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 120~200 等精準經驗值對照表（完全對應妳提供的官方/實際截圖數據）
+// 🍁 Artale 120~200 等精準經驗值對照表（完全對應你提供的官方截圖數據）
 const EXACT_EXP_TABLE = {
-  120: 29715818,
-  121: 31344244,
-  122: 33061908,
-  123: 34873700,
-  124: 36784778,
-  125: 38800583,
-  126: 40926854,
-  127: 43169645,
-  128: 45535341,
-  129: 48030677,
-  130: 50662758,
-  131: 53439077,
-  132: 56367538,
-  133: 59456479,
-  134: 62714694,
-  135: 66151459,
-  136: 69776558,
-  137: 73600313,
-  138: 77633610,
-  139: 81887931,
-  140: 86375389,
-  141: 91108760,
-  142: 96101520,
-  143: 101367883,
-  144: 106922842,
-  145: 112782213,
-  146: 118962678,
-  147: 125481832,
-  148: 132358236,
-  149: 139611467,
-  150: 147262175,
-  151: 155332142,
-  152: 163844343,
-  153: 172823012,
-  154: 182293713,
-  155: 192283408,
-  156: 202820538,
-  157: 213935103,
-  158: 225658746,
-  159: 238024845,
-  160: 251068606,
-  161: 264827165,
-  162: 279339693,
-  163: 294647508,
-  164: 310794191,
-  165: 327825712,
-  166: 345790561,
-  167: 364739883,
-  168: 384727628,
-  169: 405810702,
-  170: 428049128,
-  171: 451506220,
-  172: 476248760,
-  173: 502347192,
-  174: 529875818,
-  175: 558913012,
-  176: 589541445,
-  177: 621848316,
-  178: 655925603,
-  179: 691870326,
-  180: 729784819,
-  181: 769777027,
-  182: 811960808,
-  183: 856456260,
-  184: 903390063,
-  185: 952895838,
-  186: 1005114529,
-  187: 1060194805,
-  188: 1118293480,
-  189: 1179575962,
-  190: 1244216724,
-  191: 1312399800,
-  192: 1384319309,
-  193: 1460180007,
-  194: 1540197871,
-  195: 1624600714,
-  196: 1713628833,
-  197: 1807535693,
-  198: 1906588648,
-  199: 2011069705,
+  120: 29715818, 121: 31344244, 122: 33061908, 123: 34873700, 124: 36784778,
+  125: 38800583, 126: 40926854, 127: 43169645, 128: 45535341, 129: 48030677,
+  130: 50662758, 131: 53439077, 132: 56367538, 133: 59456479, 134: 62714694,
+  135: 66151459, 136: 69776558, 137: 73600313, 138: 77633610, 139: 81887931,
+  140: 86375389, 141: 91108760, 142: 96101520, 143: 101367883, 144: 106922842,
+  145: 112782213, 146: 118962678, 147: 125481832, 148: 132358236, 149: 139611467,
+  150: 147262175, 151: 155332142, 152: 163844343, 153: 172823012, 154: 182293713,
+  155: 192283408, 156: 202820538, 157: 213935103, 158: 225658746, 159: 238024845,
+  160: 251068606, 161: 264827165, 162: 279339693, 163: 294647508, 164: 310794191,
+  165: 327825712, 166: 345790561, 167: 364739883, 168: 384727628, 169: 405810702,
+  170: 428049128, 171: 451506220, 172: 476248760, 173: 502347192, 174: 529875818,
+  175: 558913012, 176: 589541445, 177: 621848316, 178: 655925603, 179: 691870326,
+  180: 729784819, 181: 769777027, 182: 811960808, 183: 856456260, 184: 903390063,
+  185: 952895838, 186: 1005114529, 187: 1060194805, 188: 1118293480, 189: 1179575962,
+  190: 1244216724, 191: 1312399800, 192: 1384319309, 193: 1460180007, 194: 1540197871,
+  195: 1624600714, 196: 1713628833, 197: 1807535693, 198: 1906588648, 199: 2011069705,
   200: 2121276324
 };
 
@@ -98,13 +34,11 @@ function getExpRequiredForLevel(lv) {
   if (lv <= 30) return Math.floor(1000 * Math.pow(1.2, lv - 15));
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
   if (lv <= 119) return Math.floor(200000 * Math.pow(1.1, lv - 70));
-  if (EXACT_EXP_TABLE[lv]) {
-    return EXACT_EXP_TABLE[lv];
-  }
+  if (EXACT_EXP_TABLE[lv]) return EXACT_EXP_TABLE[lv];
   return 1000000000;
 }
 
-// 🎯 計算從個人起點出發到現今狀態的「實際成長經驗值」
+// 🎯 實際成長經驗值計算
 function calculateGrowthExp(baseline, current) {
   if (!baseline || !current) return 0;
   
@@ -130,45 +64,15 @@ function calculateGrowthExp(baseline, current) {
   return totalGrowth >= 0 ? totalGrowth : 0;
 }
 
-// 🎁 美化版獎品與贊助商排版
+// 🎁 獎品排版
 function renderPrizeCell(rank) {
-  if (rank === 0) return (
-    <div>
-      <div style={{ fontWeight: 'bold', color: '#d97706' }}>🥇 第一名／闇黑龍王披風一件</div>
-      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div>
-    </div>
-  );
-  if (rank === 1) return (
-    <div>
-      <div style={{ fontWeight: 'bold', color: '#64748b' }}>🥈 第二名／楓葉祝福２０一本</div>
-      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div>
-    </div>
-  );
-  if (rank === 2) return (
-    <div>
-      <div style={{ fontWeight: 'bold', color: '#b45309' }}>🥉 第三名／闇黑龍王項鍊一條</div>
-      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div>
-    </div>
-  );
+  if (rank === 0) return <div><div style={{ fontWeight: 'bold', color: '#d97706' }}>🥇 第一名／闇黑龍王披風一件</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div></div>;
+  if (rank === 1) return <div><div style={{ fontWeight: 'bold', color: '#64748b' }}>🥈 第二名／楓葉祝福２０一本</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div></div>;
+  if (rank === 2) return <div><div style={{ fontWeight: 'bold', color: '#b45309' }}>🥉 第三名／闇黑龍王項鍊一條</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>美國阿翔贊助</div></div>;
   if (rank === 3) return <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第四名／雪花 300</div>;
-  if (rank === 4) return (
-    <div>
-      <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第五名／突襲劵 14 張</div>
-      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>夏日活動贊助商贊助</div>
-    </div>
-  );
-  if (rank >= 5 && rank <= 13) return (
-    <div>
-      <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第六~十四名／突襲劵 7 張</div>
-      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>夏日活動贊助商贊助</div>
-    </div>
-  );
-  if (rank === 14) return (
-    <div>
-      <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第十五名／商城寵物一隻</div>
-      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>本人堅持送</div>
-    </div>
-  );
+  if (rank === 4) return <div><div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第五名／突襲劵 14 張</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>夏日活動贊助商贊助</div></div>;
+  if (rank >= 5 && rank <= 13) return <div><div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第六~十四名／突襲劵 7 張</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>夏日活動贊助商贊助</div></div>;
+  if (rank === 14) return <div><div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第十五名／商城寵物一隻</div><div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>本人堅持送</div></div>;
   if (rank >= 15 && rank <= 19) return <div style={{ fontWeight: 'bold', color: '#0284c7' }}>🏅 第十六~二十名／雪花 50</div>;
   return <div style={{ fontWeight: 'bold', color: '#64748b' }}>🎗️ 努力參賽獎</div>;
 }
@@ -231,6 +135,7 @@ export default function Home() {
     const { data } = await supabase
       .from('submissions')
       .select('*')
+      .eq('status', 'approved') // 預設只計算審核通過的成績
       .order('id', { ascending: true });
 
     if (data && data.length > 0) {
@@ -238,9 +143,7 @@ export default function Home() {
       data.forEach(sub => {
         const cleanName = (sub.char_id || '').trim();
         if (!cleanName) return;
-        if (!userGroup[cleanName]) {
-          userGroup[cleanName] = [];
-        }
+        if (!userGroup[cleanName]) userGroup[cleanName] = [];
         userGroup[cleanName].push(sub);
       });
 
@@ -248,7 +151,6 @@ export default function Home() {
         const subs = userGroup[id];
         const baseline = subs[0]; 
         const latest = subs[subs.length - 1];
-
         const expGrowth = calculateGrowthExp(baseline, latest);
 
         return {
@@ -304,9 +206,7 @@ export default function Home() {
       fetchUserHistory(cleanId);
       fetchLeaderboard();
     } else {
-      if (user.pin !== pin) {
-        return setMsg('PIN 碼不正確！');
-      }
+      if (user.pin !== pin) return setMsg('PIN 碼不正確！');
       setMsg('登入成功！');
       setLoggedInUser(cleanId);
       localStorage.setItem('artale_user', cleanId);
@@ -370,38 +270,30 @@ export default function Home() {
     setFile(selectedFile);
     setScanning(true);
     setCharNotice('');
-    setIsManualEdited(false);
+    setIsManualEdited(false); // 預設自動辨識
     setLevel('');
     setExpVal('');
-    setMsg(`🔍 正在極速掃描${deviceType === 'mobile' ? '手機版' : '電腦版'}狀態區塊...`);
+    setMsg(`🔍 正在自動掃描${deviceType === 'mobile' ? '手機版' : '電腦版'}截圖數據...`);
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile, deviceType);
 
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
-        const text = result.data.text;
+        const text = result.data.text || '';
+        const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
 
-        let isIdValid = false;
+        // 💡 彈性 ID 檢查：若截圖文字辨識不出，不卡死，改給予溫馨提示並允許手動修改送出
         if (loggedInUser) {
-          const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
           const cleanUser = loggedInUser.trim().replace(/[\s\-_]+/g, '').toLowerCase();
-          
-          if (cleanText.includes(cleanUser) || /^[a-zA-Z0-9]+$/.test(loggedInUser) && cleanText.includes(cleanUser.toLowerCase())) {
-            isIdValid = true;
+          if (!cleanText.includes(cleanUser) && cleanUser.length > 2) {
+            setCharNotice(`⚠️ 提示：自動辨識未完全抓到角色名稱【${loggedInUser}】，已自動代入數值，請核對無誤後即可送出（若需修改數值會自動轉為待審核）。`);
           } else {
-            isIdValid = false;
+            setCharNotice(`✅ 截圖自動辨識成功！目前登入角色：【${loggedInUser}】`);
           }
         }
 
-        if (!isIdValid && loggedInUser) {
-          setCharNotice(`⚠️ 錯誤：截圖中的角色 ID 與目前登入帳號【${loggedInUser}】不符！系統已阻斷自動填入，請確認截圖是否正確。`);
-          setIsManualEdited(true);
-          setScanning(false);
-          setMsg('❌ ID 核對失敗，未帶入數值。');
-          return; 
-        }
-
+        // 1. 等級強力抓取
         let foundLevel = '';
         const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
@@ -416,12 +308,13 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
+        // 2. 經驗值精準抓取
         let foundExp = '';
         const expMatch = text.match(/([0-9]{5,11})\s*\[/);
         if (expMatch && expMatch[1]) {
           foundExp = expMatch[1];
         } else {
-          const bigNums = text.match(/\b[0-9]{5,11}\b/g);
+          const bigNums = text.replace(/[,.]/g, '').match(/\b[0-9]{5,11}\b/g);
           if (bigNums && bigNums.length > 0) {
             const filtered = bigNums.map(Number).filter(n => n > 200);
             if (filtered.length > 0) {
@@ -431,8 +324,7 @@ export default function Home() {
         }
         if (foundExp) setExpVal(foundExp);
 
-        setCharNotice(`✅ ID 核對成功：截圖中確認包含角色【${loggedInUser}】！`);
-        setMsg('✨ 辨識完成！請核對下方數值與預覽圖。');
+        setMsg('✨ 自動帶入完成！請核對下方等級與經驗值，有誤差可直接修改。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動確認等級與經驗值。');
@@ -468,6 +360,9 @@ export default function Home() {
       const targetLevel = Number(level);
       const inputExpNum = Number(expVal);
 
+      // 💡 若有手動修改數值，標記為 pending_review 讓管理員審核；若完全沒手動修改則直接 approved
+      const submissionStatus = isManualEdited ? 'pending_review' : 'approved';
+
       const { error: subError } = await supabase.from('submissions').insert([{
         char_id: loggedInUser.trim(),
         level: targetLevel,
@@ -475,12 +370,17 @@ export default function Home() {
         total_exp: 0, 
         photo_url: photoUrl,
         is_manual_edited: isManualEdited,
-        status: isManualEdited ? 'pending_review' : 'approved'
+        status: submissionStatus
       }]);
 
       if (subError) throw subError;
 
-      setMsg('🎉 成績已成功提交！排行榜已為您解鎖並更新。');
+      if (isManualEdited) {
+        setMsg('🎉 成績已提交！因為您有手動修改數值，目前已送交管理員審核，審核通過後即會更新至排行榜！');
+      } else {
+        setMsg('🎉 成績已成功自動提交！排行榜已為您解鎖並更新。');
+      }
+      
       setHasSubmitted(true);
       setIsManualEdited(false);
       fetchLeaderboard();
@@ -495,11 +395,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.22</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.23</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.22)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.23)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -538,7 +438,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.22 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>，請核對等級與經驗值是否正確帶入！
+              💡 <strong>v3.23 核心優化：</strong>截圖上傳後會<strong>自動嘗試抓取等級與經驗值</strong>並填入下方欄位。若自動帶入有誤差，你直接手動修改欄位數字即可，送出後會自動交由管理員審核！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
@@ -556,13 +456,12 @@ export default function Home() {
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在極速掃描指定裝置區塊...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在自動解析畫面數值...</p>}
             
-            {/* 🔍 裁切即時預覽區塊 (Debug Preview) */}
             {cropPreviewUrl && (
               <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
-                  🔍 【系統實際掃描的截圖區塊預覽】請確認是否成功對準狀態列：
+                  🔍 【系統實際掃描的截圖區塊預覽】：
                 </div>
                 <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
               </div>
@@ -575,7 +474,13 @@ export default function Home() {
             )}
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
-            <input type="number" placeholder="例如：179" value={level} onChange={e => { setLevel(e.target.value); setIsManualEdited(true); }} style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+            <input 
+              type="number" 
+              placeholder="例如：179" 
+              value={level} 
+              onChange={e => { setLevel(e.target.value); setIsManualEdited(true); }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid ' + (isManualEdited ? '#f59e0b' : '#cbd5e1'), boxSizing: 'border-box' }} 
+            />
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>3. 當前經驗值數字 (EXP)：</label>
             <input 
@@ -583,8 +488,9 @@ export default function Home() {
               placeholder="例如：352627350" 
               value={expVal} 
               onChange={e => { setExpVal(e.target.value); setIsManualEdited(true); }} 
-              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} 
+              style={{ display: 'block', margin: '5px 0 15px 0', padding: '10px', width: '100%', borderRadius: '6px', border: '1px solid ' + (isManualEdited ? '#f59e0b' : '#cbd5e1'), boxSizing: 'border-box' }} 
             />
+            {isManualEdited && <p style={{ color: '#d97706', fontSize: '12px', margin: '-10px 0 15px 0' }}>⚠️ 偵測到您手動修改了數字，送出後將進入管理員審核狀態。</p>}
 
             <button type="submit" disabled={loading} style={{ padding: '12px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', width: '100%' }}>
               {loading ? '提交中...' : '確認並提交成績'}
@@ -595,7 +501,7 @@ export default function Home() {
           <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <h3 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📈 【{loggedInUser}】的經驗值成長走勢</h3>
             {history.length < 2 ? (
-              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次成績，才會生成成長折線圖喔！）</p>
+              <p style={{ color: '#64748b', fontSize: '14px' }}>目前歷史紀錄不足（需要至少提交 2 次通過審核的成績，才會生成成長折線圖喔！）</p>
             ) : (
               <div style={{ width: '100%', overflowX: 'auto' }}>
                 <svg width="100%" height="180" viewBox="0 0 500 180" style={{ background: '#f8fafc', borderRadius: '8px' }}>
@@ -657,7 +563,7 @@ export default function Home() {
             </thead>
             <tbody>
               {players.length === 0 ? (
-                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據</td></tr>
+                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>目前尚無比賽數據或等待審核中</td></tr>
               ) : (
                 players.map((p, idx) => {
                   const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
