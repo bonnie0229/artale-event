@@ -220,7 +220,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 v3.33 最終正確裁切：電腦版與手機版狀態列全部都在畫面下方！
+  // 🎯 底部狀態列精準鎖定
   function prepareCropImage(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -233,17 +233,15 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            // 手機版：精準鎖定畫面正下方的浮動狀態框
-            cropX = img.width * 0.25;
-            cropY = img.height * 0.70;
-            cropWidth = img.width * 0.50;
-            cropHeight = img.height * 0.30;
+            cropX = img.width * 0.20;
+            cropY = img.height * 0.65;
+            cropWidth = img.width * 0.60;
+            cropHeight = img.height * 0.35;
           } else {
-            // 電腦版：精準鎖定畫面底部的狀態列橫條區（包含左側等級與右側經驗值）
             cropX = 0;
-            cropY = img.height * 0.70;
-            cropWidth = img.width * 0.70;
-            cropHeight = img.height * 0.30;
+            cropY = img.height * 0.65;
+            cropWidth = img.width * 0.75;
+            cropHeight = img.height * 0.35;
           }
 
           canvas.width = cropWidth;
@@ -270,7 +268,7 @@ export default function Home() {
     setIdMismatch(false);
     setLevel('');
     setExpVal('');
-    setMsg(`⚡ 正在掃描${deviceType === 'mobile' ? '手機版下方狀態框' : '電腦版底部狀態列'}...`);
+    setMsg(`⚡ 正在以關鍵字掃描${deviceType === 'mobile' ? '手機版下方狀態框' : '電腦版底部狀態列'}...`);
 
     try {
       const ocrImage = await prepareCropImage(selectedFile, deviceType);
@@ -279,7 +277,7 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text || '';
 
-        // 1. 智慧 ID 檢核：檢查截圖內是否有出現登入的使用者名稱
+        // 1. ID 智慧比對
         const cleanLoggedUser = loggedInUser.trim().toLowerCase();
         const cleanOcrText = text.toLowerCase();
         const hasIdInText = cleanOcrText.includes(cleanLoggedUser);
@@ -291,23 +289,38 @@ export default function Home() {
           setCharNotice(`✅ 驗證通過：截圖與登入身分【${loggedInUser}】相符！`);
         }
 
-        // 2. 等級精準抓取：尋找 120~200 之間的 3 位數
+        // 2. 🔑 關鍵字錨定抓取等級：尋找 LV 後面的數字
         let foundLevel = '';
-        const allNums = text.match(/\b\d{3}\b/g);
-        if (allNums) {
-          const validLv = allNums.map(Number).filter(n => n >= 120 && n <= 200);
-          if (validLv.length > 0) foundLevel = String(validLv[0]);
+        const lvMatch = text.match(/LV[.\s]*(\d{2,3})/i);
+        if (lvMatch) {
+          const n = Number(lvMatch[1]);
+          if (n >= 120 && n <= 200) foundLevel = String(n);
+        }
+        // 備用：若沒抓到 LV 關鍵字，才用全域搜尋
+        if (!foundLevel) {
+          const allNums = text.match(/\d+/g);
+          if (allNums) {
+            const validLv = allNums.map(Number).filter(n => n >= 120 && n <= 200);
+            if (validLv.length > 0) foundLevel = String(validLv[0]);
+          }
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 3. 經驗值精準抓取：抓取大於 200 的數字（過濾掉等級）
+        // 3. 🔑 關鍵字錨定抓取經驗值：尋找 EXP 後面的數字（自動忽略百分比）
         let foundExp = '';
-        const cleanNumsText = text.replace(/[,.]/g, '');
-        const bigNums = cleanNumsText.match(/\b\d+\b/g);
-        if (bigNums) {
-          const validExps = bigNums.map(Number).filter(n => n > 200 && String(n) !== foundLevel);
-          if (validExps.length > 0) {
-            foundExp = String(Math.max(...validExps));
+        const expMatch = text.match(/EXP[.\s]*(\d+)/i);
+        if (expMatch) {
+          foundExp = expMatch[1];
+        }
+        // 備用：若沒抓到 EXP 關鍵字，才用大數字過濾
+        if (!foundExp) {
+          const cleanNumsText = text.replace(/[,.]/g, '');
+          const allNums2 = cleanNumsText.match(/\d+/g);
+          if (allNums2) {
+            const validExps = allNums2.map(Number).filter(n => n > 1000 && String(n) !== foundLevel);
+            if (validExps.length > 0) {
+              foundExp = String(Math.max(...validExps));
+            }
           }
         }
         if (foundExp) setExpVal(foundExp);
@@ -387,11 +400,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.33</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.36</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.33)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.36)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -430,7 +443,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.33 底部狀態區精準鎖定：</strong>電腦版與手機版全面修正為掃描**畫面下方**的狀態列。系統會自動核對 ID 與等級，有誤會轉交管理員審核。
+              💡 <strong>v3.36 關鍵字錨定版：</strong>精準鎖定 `LV` 與 `EXP` 關鍵字後方的數值，全面解決位數變動與亂抓的問題。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
@@ -448,12 +461,12 @@ export default function Home() {
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在掃描底部狀態列中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在以關鍵字解析狀態列中...</p>}
             
             {cropPreviewUrl && (
               <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
-                  🔍 【底部狀態列裁切預覽（請確認是否有包含等級與經驗值）】：
+                  🔍 【底部狀態列裁切預覽】：
                 </div>
                 <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
               </div>
