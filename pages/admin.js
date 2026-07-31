@@ -83,7 +83,7 @@ export default function Home() {
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
   const [deviceType, setDeviceType] = useState('pc'); 
-  const [cropPreviewUrl, setCropPreviewUrl] = useState(''); // 🔍 裁切畫面預覽 State
+  const [cropPreviewUrl, setCropPreviewUrl] = useState(''); 
   
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
@@ -228,7 +228,6 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 裁切邏輯並產生 Debug 預覽圖
   function prepareImageForOCR(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -241,13 +240,11 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            // 手機版：畫面中間下方狀態框 (X: 25%~75%, Y: 60%~95%)
-            cropX = img.width * 0.25;
-            cropY = img.height * 0.60;
-            cropWidth = img.width * 0.50;
-            cropHeight = img.height * 0.35;
+            cropX = img.width * 0.20;
+            cropY = img.height * 0.55;
+            cropWidth = img.width * 0.60;
+            cropHeight = img.height * 0.40;
           } else {
-            // 電腦版：下方狀態列 (X: 0%~100%, Y: 65%~100%)
             cropX = 0;
             cropY = img.height * 0.65;
             cropWidth = img.width;
@@ -259,7 +256,7 @@ export default function Home() {
           ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
           
           const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-          setCropPreviewUrl(dataUrl); // 儲存預覽圖供介面顯示
+          setCropPreviewUrl(dataUrl);
           resolve(dataUrl);
         };
         img.src = e.target.result;
@@ -268,7 +265,7 @@ export default function Home() {
     });
   }
 
-  // 📸 智慧區塊 OCR 掃描
+  // 📸 v3.9 精準解析：斜線前EXP、LV等級、真實ID核對
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -285,7 +282,7 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 等級抓取
+        // 1. 等級抓取 (LV. 173 / LV.186 等格式)
         const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
@@ -300,19 +297,29 @@ export default function Home() {
           }
         }
 
-        // 2. 經驗值抓取
-        const expMatch = text.match(/(?:[0-9]{7,10})/);
-        if (expMatch) {
-          setExpVal(expMatch[0]);
+        // 2. 經驗值精準抓取：抓取斜線 (/) 之前的 1~11 位數字，避開 / 與 % 之間的數值
+        const expMatch = text.match(/([0-9]{1,11})\s*\/\s*[0-9.]+/);
+        if (expMatch && expMatch[1]) {
+          setExpVal(expMatch[1]);
         } else {
-          const allBigNums = text.match(/\d{7,10}/g);
-          if (allBigNums && allBigNums.length > 0) {
-            setExpVal(allBigNums[0]);
+          // 備用：尋找帶有 EXP 關鍵字後方的數字
+          const altExp = text.match(/(?:EXP|exp)[\s\.:]*([0-9]{1,11})/);
+          if (altExp && altExp[1]) {
+            setExpVal(altExp[1]);
           }
         }
 
+        // 3. 真實角色 ID 交叉比對檢驗
         if (loggedInUser) {
-          setCharNotice(`✅ 已自動帶入目前登入角色：${loggedInUser}，請確認下方預覽圖與數值是否正確！`);
+          const cleanText = text.replace(/\s+/g, '').toLowerCase();
+          const cleanUser = loggedInUser.trim().toLowerCase();
+          if (cleanText.includes(cleanUser)) {
+            setCharNotice(`✅ 成功在截圖中核對到角色 ID：${loggedInUser}`);
+            setIsManualEdited(false);
+          } else {
+            setCharNotice(`⚠️ 警告：截圖中未偵測到相符的 ID（目前登入：${loggedInUser}）。請確認圖片是否正確，送出後將由管理員審核！`);
+            setIsManualEdited(true);
+          }
         }
 
         setMsg('✨ 辨識完成！請核對下方數值與預覽圖。');
@@ -380,11 +387,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.8</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.9</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.8)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.9)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -423,7 +430,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.8 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>，讓你知道程式有沒有確實對準狀態列！
+              💡 <strong>v3.9 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>與 ID 驗證結果！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
@@ -454,7 +461,7 @@ export default function Home() {
             )}
 
             {charNotice && (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
