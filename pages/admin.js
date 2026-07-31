@@ -31,7 +31,7 @@ const EXACT_EXP_TABLE = {
 function getExpRequiredForLevel(lv) {
   if (EXACT_EXP_TABLE[lv]) return EXACT_EXP_TABLE[lv];
   if (lv > 200) return 2121276324;
-  return 29715818; // 預設 120 等基準
+  return 29715818;
 }
 
 function calculateGrowthExp(baseline, current) {
@@ -78,8 +78,7 @@ export default function Home() {
   const [level, setLevel] = useState('');
   const [expVal, setExpVal] = useState('');
   const [file, setFile] = useState(null);
-  const [deviceType, setDeviceType] = useState('pc'); // 支援切換裝置裁切
-  const [cropPreviewUrl, setCropPreviewUrl] = useState(''); 
+  const [previewUrl, setPreviewUrl] = useState(''); 
   
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
@@ -217,91 +216,56 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 精準局部裁切：鎖定經驗值與等級所在的狀態列區塊，過濾雜訊
-  function prepareCropImage(file, type) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
-
-          if (type === 'mobile') {
-            // 手機版介面通常集中在下方狀態列
-            cropX = img.width * 0.05;
-            cropY = img.height * 0.50;
-            cropWidth = img.width * 0.90;
-            cropHeight = img.height * 0.45;
-          } else {
-            // 電腦版介面通常在右下角狀態列
-            cropX = img.width * 0.40;
-            cropY = img.height * 0.60;
-            cropWidth = img.width * 0.60;
-            cropHeight = img.height * 0.40;
-          }
-
-          canvas.width = cropWidth;
-          canvas.height = cropHeight;
-          ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-          
-          const dataUrl = canvas.toDataURL('image/png', 1.0);
-          setCropPreviewUrl(dataUrl);
-          resolve(dataUrl);
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
+  // 🎯 v3.28 核心改進：取消所有局部裁切！採用全圖原尺寸辨識，並強制以登入帳號為本人身分
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setCharNotice('');
+    setCharNotice(`✅ 檢驗身分鎖定：【${loggedInUser}】（不依賴截圖文字辨識 ID，100% 準確）`);
     setIsManualEdited(false);
     setLevel('');
     setExpVal('');
-    setMsg(`⚡ 正在精準裁切並掃描${deviceType === 'mobile' ? '手機版' : '電腦版'}狀態區塊...`);
+    setMsg('⚡ 正在全圖掃描解析等級與經驗值...');
+
+    // 預覽圖片
+    const reader = new FileReader();
+    reader.onload = (ev) => setPreviewUrl(ev.target.result);
+    reader.readAsDataURL(selectedFile);
 
     try {
-      const ocrImage = await prepareCropImage(selectedFile, deviceType);
-
       if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(ocrImage, 'eng');
+        // 直接使用原圖進行辨識，不進行奇怪的裁切
+        const result = await window.Tesseract.recognize(selectedFile, 'eng');
         const text = result.data.text || '';
 
-        setCharNotice(`✅ 狀態區塊截取成功！身分：【${loggedInUser}】`);
-
-        // 1. 等級精準抓取：尋找 120~200 之間的數值
+        // 1. 等級萬用特徵提取：尋找整張圖中所有 3 位數，且數值在 120 ~ 200 之間的數字作為等級
         let foundLevel = '';
         const allNums = text.match(/\b\d{3}\b/g);
         if (allNums) {
           const validLv = allNums.map(Number).filter(n => n >= 120 && n <= 200);
-          if (validLv.length > 0) foundLevel = String(validLv[0]);
+          if (validLv.length > 0) {
+            foundLevel = String(validLv[0]); // 取第一個符合 120~200 的 3 位數
+          }
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 2. 經驗值精準抓取：抓取大於 200 的數字（過濾掉等級）
+        // 2. 經驗值萬用特徵提取：清理逗號句點，抓取所有 5 位數以上的大數字（排除剛剛抓到的等級）
         let foundExp = '';
         const cleanNumsText = text.replace(/[,.]/g, '');
-        const bigNums = cleanNumsText.match(/\b\d+\b/g);
+        const bigNums = cleanNumsText.match(/\b\d{5,11}\b/g);
         if (bigNums) {
           const validExps = bigNums.map(Number).filter(n => n > 200 && String(n) !== foundLevel);
           if (validExps.length > 0) {
-            foundExp = String(Math.max(...validExps));
+            foundExp = String(Math.max(...validExps)); // 取當中最大的一串數字作為經驗值
           }
         }
         if (foundExp) setExpVal(foundExp);
 
-        setMsg('✨ 自動匯入完成！請核對下方數值，如有誤差直接修改即可。');
+        setMsg('✨ 全圖自動解析完成！請核對下方數值，如有誤差直接修改即可。');
       }
     } catch (err) {
-      setMsg('圖片讀取完成，請手動填寫等級與經驗值。');
+      setMsg('圖片自動解析發生狀況，請直接手動填寫等級與經驗值。');
     } finally {
       setScanning(false);
     }
@@ -337,7 +301,7 @@ export default function Home() {
       const submissionStatus = isManualEdited ? 'pending_review' : 'approved';
 
       const { error: subError } = await supabase.from('submissions').insert([{
-        char_id: loggedInUser.trim(),
+        char_id: loggedInUser.trim(), // 強制綁定目前登入的帳號，絕不亂猜 ID
         level: targetLevel,
         exp_val: inputExpNum,
         total_exp: 0, 
@@ -368,11 +332,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.26</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.28</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.26)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.28)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -411,32 +375,20 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.26 精準裁切版：</strong>請先選擇截圖來源裝置，上傳後會自動對準狀態列抓取 120~200 等級與經驗值！若有誤差手動修改即可。
-            </div>
-
-            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
-            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-              <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
-                <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
-                💻 電腦版截圖
-              </label>
-              <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
-                <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
-                📱 手機版截圖
-              </label>
+              💡 <strong>v3.28 全圖特徵識別：</strong>身分直接以您登入的帳號為準（不靠截圖盲猜 ID）。系統會自動掃描全圖中的 120~200 等級與大數字經驗值，若有誤差直接手動修改即可。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在精準裁切掃描中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在全圖掃描解析中...</p>}
             
-            {cropPreviewUrl && (
+            {previewUrl && (
               <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', margin: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>
-                  🔍 【自動裁切的狀態列預覽】：
+                  🔍 【上傳截圖預覽】：
                 </div>
-                <img src={cropPreviewUrl} alt="Crop Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
+                <img src={previewUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: '160px', border: '2px solid #94a3b8', borderRadius: '4px', objectFit: 'contain' }} />
               </div>
             )}
 
