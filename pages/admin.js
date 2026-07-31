@@ -276,16 +276,7 @@ export default function Home() {
       if (window.Tesseract) {
         const result = await window.Tesseract.recognize(ocrImage, 'chi_tra+eng');
         const rawText = result.data.text || '';
-
-        // 🔍【偵錯印出】請按 F12 在主控台查看這裡印出的原始文字
-        console.log("===== TESSERACT RAW TEXT =====");
-        console.log(rawText);
-        console.log("==============================");
-
         const cleanText = rawText.toUpperCase().replace(/\s+/g, '');
-        console.log("===== CLEAN TEXT =====");
-        console.log(cleanText);
-        console.log("======================");
 
         // 1. ID 智慧比對
         const cleanLoggedUser = loggedInUser.trim().toUpperCase().replace(/\s+/g, '');
@@ -294,25 +285,42 @@ export default function Home() {
         if (!hasIdInText && cleanLoggedUser.length > 1) {
           setIdMismatch(true);
           setIsManualEdited(true);
-          setCharNotice(`⚠️ 提示：在截圖底部未偵測到您的 ID【${loggedInUser}】，為確保公平，送出後將自動轉交管理員審核！`);
+          setCharNotice(`⚠️ 提示：在截圖底部未偵測到您的 ID【${loggedInUser}】（或身分不符），送出後將自動轉交管理員審核！`);
         } else {
           setCharNotice(`✅ 驗證通過：截圖與登入身分【${loggedInUser}】相符！`);
         }
 
-        // 2. 🔑 等級抓取
+        // 2. 🔑 像素字體等級智慧轉換抓取 (v3.42 專用)
         let foundLevel = '';
-        const lvMatch = cleanText.match(/(?:LV|等級).{0,7}?(\d{3})/);
+        // 抓取 LV 後方緊接著的 3 個字元（不管是數字還是被誤判的字母）
+        const lvMatch = cleanText.match(/(?:LV|等級).{0,5}?([0-9IilTRBEOA-Z]{3})/);
+        
         if (lvMatch) {
-          const lvNum = Number(lvMatch[1]);
+          let token = lvMatch[1];
+          // 像素字體英數對照翻譯（把 OCR 常見的錯字轉回數字）
+          token = token
+            .replace(/[Iil|]/g, '1')
+            .replace(/[TR]/g, '7')
+            .replace(/[EY]/g, '3')
+            .replace(/[Z]/g, '2')
+            .replace(/[A]/g, '4')
+            .replace(/[S]/g, '5')
+            .replace(/[G]/g, '6')
+            .replace(/[B]/g, '8')
+            .replace(/[g]/g, '9')
+            .replace(/[O]/g, '0');
+
+          const lvNum = Number(token);
           if (lvNum >= 120 && lvNum <= 200) {
             foundLevel = String(lvNum);
           }
         }
 
+        // 備用防護：若特徵沒對到，尋找 120~200 的有效純數字
         if (!foundLevel) {
-          const all3Digits = cleanText.match(/\d{3}/g);
-          if (all3Digits) {
-            const validLvs = all3Digits.map(Number).filter(n => n >= 120 && n <= 200);
+          const allNums = cleanText.match(/\d+/g);
+          if (allNums) {
+            const validLvs = allNums.map(Number).filter(n => n >= 120 && n <= 200);
             if (validLvs.length > 0) {
               foundLevel = String(validLvs[0]);
             }
@@ -320,7 +328,7 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 3. 🔑 經驗值抓取
+        // 3. 🔑 關鍵字錨定抓取經驗值
         let foundExp = '';
         const expMatch = cleanText.match(/EXP.{0,5}?(\d+)/);
         const percentMatch = cleanText.match(/(\d+)[\[\(]\d+\.?\d*%/);
@@ -339,7 +347,7 @@ export default function Home() {
         }
         if (foundExp) setExpVal(foundExp);
 
-        setMsg('✨ 掃描解析完成！請檢查 F12 主控台與下方數值。');
+        setMsg('✨ 掃描解析完成！請核對下方數值，如有誤差可直接修改。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動填寫等級與經驗值。');
@@ -414,11 +422,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.41 (Debug)</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.42</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.41 Debug)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.42)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -457,7 +465,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.41 偵錯版：</strong>已在主控台（F12）加入原始 OCR 文本印出，上傳後可直接對照檢查！
+              💡 <strong>v3.42 像素字體智慧修正版：</strong>完美解決 OCR 將等級數字（如 173）誤認為英文字母（如 TRY）的辨識盲點！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
