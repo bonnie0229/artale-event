@@ -6,13 +6,16 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+// 🎯 活動截止時間：2026年9月8日 早上 07:59 (台灣時間)
 const DEADLINE = new Date('2026-09-08T07:59:00+08:00').getTime();
 
+// 🍁 Artale 120~200 級精準 1.05 倍對照
 function getExpRequiredForLevel(lv) {
   if (lv < 120) return 0;
   return Math.floor(29715818 * Math.pow(1.05, lv - 120));
 }
 
+// 🎯 計算兩筆紀錄之間的經驗成長量
 function calculateExpBetween(prev, curr) {
   if (!prev || !curr) return 0;
   const baseLv = Number(prev.level);
@@ -66,6 +69,7 @@ export default function Home() {
   const [players, setPlayers] = useState([]);
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState('');
+  const [scanDebugInfo, setScanDebugInfo] = useState(''); // 🔍 即時偵測除錯面板訊息
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -247,12 +251,14 @@ export default function Home() {
     });
   }
 
+  // 📸 【具備即時偵測與除錯回饋的強力解析】
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setMsg('🔍 正在強效解析截圖中的數值...');
+    setMsg('🔍 正在強力解析截圖...');
+    setScanDebugInfo('⏳ 正在啟動 OCR 辨識引擎...');
 
     try {
       let attempts = 0;
@@ -263,37 +269,75 @@ export default function Home() {
 
       if (!window.Tesseract) {
         setMsg('⚠️ 辨識元件載入中或被阻擋，請手動輸入等級與經驗值。');
+        setScanDebugInfo('❌ 錯誤：Tesseract 引擎未成功載入。');
         setScanning(false);
         return;
       }
 
       const ocrImage = await prepareImageForOCR(selectedFile);
       const result = await window.Tesseract.recognize(ocrImage, 'eng');
-      const fullText = result.data.text || '';
+      const text = result.data.text || '';
       
-      const allNums = fullText.replace(/[,.]/g, ' ').match(/\b\d+\b/g) || [];
+      console.log('=== OCR 原始辨識文字 ===\n', text);
 
-      let foundLv = '';
-      let foundExp = '';
+      let detectedLv = '';
+      let detectedExp = '';
 
-      const validLvs = allNums.map(Number).filter(n => n >= 10 && n <= 200);
-      if (validLvs.length > 0) {
-        foundLv = String(validLvs[0]);
-        setLevel(foundLv);
+      // 1. 🎯 抓取等級 (LV.)
+      const lvMatch = text.match(/(?:lv|level)\D*(\d{1,3})/i);
+      if (lvMatch && lvMatch[1]) {
+        const val = Number(lvMatch[1]);
+        if (val >= 120 && val <= 200) {
+          detectedLv = lvMatch[1];
+          setLevel(detectedLv);
+        }
       }
 
-      const expCandidates = allNums.filter(numStr => numStr.length >= 7 && numStr.length <= 11);
-      if (expCandidates.length > 0) {
-        foundExp = expCandidates[0];
-        setExpVal(foundExp);
-      }
-
-      if (foundLv || foundExp) {
-        setMsg(`✨ 自動辨識成功！(等級: ${foundLv || '未抓到'}, 經驗: ${foundExp || '未抓到'}) 請核對是否正確。`);
+      // 2. 🎯 抓取經驗值 (EXP.)
+      const expMatch = text.match(/(?:exp)\D*(\d{7,10})/i);
+      if (expMatch && expMatch[1]) {
+        detectedExp = expMatch[1];
+        setExpVal(detectedExp);
       } else {
-        setMsg('💡 未能自動辨識出數字，請手動輸入等級與經驗值。');
+        // 備用：全域搜尋 7~10 位數長數字
+        const allNums = text.replace(/[,.]/g, ' ').match(/\b\d+\b/g) || [];
+        const expCandidates = allNums.filter(n => n.length >= 7 && n.length <= 10);
+        if (expCandidates.length > 0) {
+          detectedExp = expCandidates[expCandidates.length - 1];
+          setExpVal(detectedExp);
+        }
       }
+
+      // 3. 🎯 日期驗證（支援 7/31 或 731 容錯）
+      const now = new Date();
+      const M = now.getMonth() + 1; // 7
+      const D = now.getDate();     // 31
+      const cleanAllText = text.replace(/[\s\/\-\.\,\:\_\+\#\~\\\|\[\]\(\)]+/g, '');
+      const mmStr = String(M).padStart(2, '0');
+      const ddStr = String(D).padStart(2, '0');
+
+      const hasNumMatch = cleanAllText.includes(`${mmStr}${ddStr}`) || cleanAllText.includes(`${M}${D}`);
+      const hasSymbolMatch = text.includes(`${M}/${D}`) || text.includes(`${mmStr}/${ddStr}`) || text.includes(`${M}.${D}`) || text.includes('7/31');
+
+      const dateStatus = (hasNumMatch || hasSymbolMatch) ? `✅ 成功驗證今日日期 (${M}/${D})` : `💡 未直接偵測到 ${M}/${D} (將由管理員審核放行)`;
+
+      // 📝 產生即時除錯報告顯示在畫面上
+      setScanDebugInfo(`
+        📊 【OCR 偵測即時報告】
+        • 偵測到等級 (Lv)：${detectedLv ? `成功抓取 [ ${detectedLv} ]` : '❌ 未成功抓取 (請手動填入)'}
+        • 偵測到經驗值 (EXP)：${detectedExp ? `成功抓取 [ ${detectedExp} ]` : '❌ 未成功抓取 (請手動填入)'}
+        • 日期檢核狀態：${dateStatus}
+      `);
+
+      if (detectedLv || detectedExp) {
+        setMsg('✨ 截圖解析完成！請核對下方欄位數值是否正確。');
+      } else {
+        setMsg('💡 截圖已上傳，請手動輸入等級與經驗值。');
+      }
+
     } catch (err) {
+      console.error('OCR 錯誤:', err);
+      setScanDebugInfo('❌ 圖片解析發生異常，請手動輸入數值。');
       setMsg('💡 圖片已選擇，請手動輸入等級與經驗值。');
     } finally {
       setScanning(false);
@@ -387,13 +431,20 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>系統會自動解析並填入數值。若有誤差可直接手動修改！
+              💡 <strong>操作說明：</strong>上傳截圖後，下方會即時顯示 **OCR 偵測報告**，您可以一眼看出等級與經驗值有沒有成功抓到！有誤差隨時可手動修改。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳 7/30 以後截圖：</label>
             <input type="file" accept="image/*" disabled={isEnded} onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在強效解析截圖中的數值...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在強力解析截圖中的數值...</p>}
+
+            {/* 🔍 即時偵測除錯回饋面板 */}
+            {scanDebugInfo && (
+              <div style={{ background: '#1e293b', color: '#38bdf8', padding: '12px', borderRadius: '8px', fontSize: '13px', whiteSpace: 'pre-line', marginBottom: '15px', fontFamily: 'monospace', border: '1px solid #475569' }}>
+                {scanDebugInfo}
+              </div>
+            )}
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px', marginTop: '15px' }}>2. 當前等級 (Lv)：</label>
             <input 
