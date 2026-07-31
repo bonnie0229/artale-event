@@ -45,7 +45,7 @@ export default function AdminDashboard() {
   const [playerSubmissions, setPlayerSubmissions] = useState([]);
   const [msg, setMsg] = useState('');
 
-  // 🛡️ 管理員登入：帳號隨便打，密碼固定為 0
+  // 🛡️ 管理員登入：帳號隨便打，密碼固定輸入 0 即可登入
   function handleAdminLogin(e) {
     e.preventDefault();
     if (password === '0') {
@@ -53,7 +53,7 @@ export default function AdminDashboard() {
       setMsg('✅ 管理員登入成功！');
       fetchAllSubmissions();
     } else {
-      setMsg('❌ 密碼錯誤！');
+      setMsg('❌ 密碼錯誤！(管理員密碼請輸入 0)');
     }
   }
 
