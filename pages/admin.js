@@ -7,7 +7,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-// 🍁 Artale 經驗值對照與 120等後 1.05 倍成長公式
+// 🍁 Artale 經驗值對照與 120等後 1.05 倍成長公式 (正確版：基底 23478579，次方 lv - 120)
 function getExpRequiredForLevel(lv) {
   if (lv <= 1) return 15;
   if (lv <= 15) return Math.floor(15 * Math.pow(1.3, lv - 1));
@@ -15,7 +15,7 @@ function getExpRequiredForLevel(lv) {
   if (lv <= 70) return Math.floor(15000 * Math.pow(1.15, lv - 30));
   if (lv <= 120) return Math.floor(200000 * Math.pow(1.1, lv - 70));
   if (lv <= 200) {
-    const baseExp120 = 23478579; 
+    const baseExp120 = 23478579; // 120等真實需求量
     return Math.floor(baseExp120 * Math.pow(1.05, lv - 120));
   }
   return 1000000000;
@@ -240,13 +240,11 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            // 手機版：擴大中央狀態框範圍 (X: 10%~90%, Y: 40%~95%)
             cropX = img.width * 0.10;
             cropY = img.height * 0.40;
             cropWidth = img.width * 0.80;
             cropHeight = img.height * 0.55;
           } else {
-            // 電腦版：下方完整狀態列 (X: 0%~100%, Y: 60%~100%)
             cropX = 0;
             cropY = img.height * 0.60;
             cropWidth = img.width;
@@ -267,7 +265,6 @@ export default function Home() {
     });
   }
 
-  // 📸 v3.14 嚴格 ID 交叉檢查與精準數值解析
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -292,12 +289,9 @@ export default function Home() {
           const cleanText = text.replace(/[\s\-_]+/g, '').toLowerCase();
           const cleanUser = loggedInUser.trim().replace(/[\s\-_]+/g, '').toLowerCase();
           
-          // 若登入帳號為英文（如 apple），直接比對；若為中文，檢查 OCR 是否有讀到部分或完全相符
           if (cleanText.includes(cleanUser) || /^[a-zA-Z0-9]+$/.test(loggedInUser) && cleanText.includes(cleanUser.toLowerCase())) {
             isIdValid = true;
           } else {
-            // 寬容備用：若使用者上傳的是中文 ID，且英文 OCR 引擎無法完整轉譯中文，允許手動核對但跳出警告
-            // 但如果畫面中完全沒有符合的特徵，則判斷為不符
             isIdValid = false;
           }
         }
@@ -307,17 +301,16 @@ export default function Home() {
           setIsManualEdited(true);
           setScanning(false);
           setMsg('❌ ID 核對失敗，未帶入數值。');
-          return; // 立即中斷，不往下抓等級與經驗值
+          return; 
         }
 
-        // 2. 等級強力抓取 (精準抓取 LV. 或 Lv. 後方的 1~3 位數，避開工作列時鐘或其它干擾)
+        // 2. 等級強力抓取
         let foundLevel = '';
         const lvMatch = text.match(/(?:LV|Lv|L\.)[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           const val = Number(lvMatch[1]);
           if (val >= 1 && val <= 200) foundLevel = String(val);
         } else {
-          // 備用過濾：尋找獨立大於 10 且小於等於 200 的數字
           const allNums = text.match(/\b\d{1,3}\b/g);
           if (allNums) {
             const valid = allNums.find(n => Number(n) >= 10 && Number(n) <= 200);
@@ -408,11 +401,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.14</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.16</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.14)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.16)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -451,7 +444,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.14 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>與 ID 嚴格核對結果！
+              💡 <strong>v3.16 操作說明：</strong>上傳後下方會即時顯示<strong>系統實際掃描的畫面預覽</strong>與 ID 嚴格核對結果！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
