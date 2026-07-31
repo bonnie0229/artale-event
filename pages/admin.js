@@ -220,7 +220,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 底部狀態列精準鎖定 (已擴大裁切範圍與全寬度，兼容視窗化)
+  // 🎯 底部狀態列精準鎖定
   function prepareCropImage(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -274,13 +274,18 @@ export default function Home() {
       const ocrImage = await prepareCropImage(selectedFile, deviceType);
 
       if (window.Tesseract) {
-        // 🚀 載入繁體中文與英文語言包
         const result = await window.Tesseract.recognize(ocrImage, 'chi_tra+eng');
         const rawText = result.data.text || '';
 
-        // 🌟 終極殺手鐧：「真空壓縮法」🌟
-        // 強制移除所有的空白、換行與 tab，並轉為大寫，徹底粉碎 OCR 對不同顏色方塊產生的排版亂碼
+        // 🔍【偵錯印出】請按 F12 在主控台查看這裡印出的原始文字
+        console.log("===== TESSERACT RAW TEXT =====");
+        console.log(rawText);
+        console.log("==============================");
+
         const cleanText = rawText.toUpperCase().replace(/\s+/g, '');
+        console.log("===== CLEAN TEXT =====");
+        console.log(cleanText);
+        console.log("======================");
 
         // 1. ID 智慧比對
         const cleanLoggedUser = loggedInUser.trim().toUpperCase().replace(/\s+/g, '');
@@ -294,11 +299,8 @@ export default function Home() {
           setCharNotice(`✅ 驗證通過：截圖與登入身分【${loggedInUser}】相符！`);
         }
 
-        // 2. 🔑 關鍵字錨定抓取等級 (真空壓縮進化版)
+        // 2. 🔑 等級抓取
         let foundLevel = '';
-        
-        // 特徵 A：因為空格都被抽乾了，LV 和 179 中間頂多只會剩下 . 或 | 等雜訊符號
-        // {0,7}? 代表只允許 LV 和數字中間最多夾雜 7 個雜訊字元，防止抓到遠處的血條數字
         const lvMatch = cleanText.match(/(?:LV|等級).{0,7}?(\d{3})/);
         if (lvMatch) {
           const lvNum = Number(lvMatch[1]);
@@ -307,8 +309,6 @@ export default function Home() {
           }
         }
 
-        // 特徵 B (備用)：如果截圖真的糊到連 LV 都認不出來
-        // 由於我們把字串變成連貫的了，這會直接掃描並抓取整個狀態列「第一個」符合 120~200 的三位數 (通常就是等級)
         if (!foundLevel) {
           const all3Digits = cleanText.match(/\d{3}/g);
           if (all3Digits) {
@@ -320,13 +320,9 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-
-        // 3. 🔑 關鍵字錨定抓取經驗值
+        // 3. 🔑 經驗值抓取
         let foundExp = '';
-        
-        // 特徵 A (電腦版)：尋找 EXP 緊跟著的數字
         const expMatch = cleanText.match(/EXP.{0,5}?(\d+)/);
-        // 特徵 B (手機版)：尋找緊貼在 [XX.XX%] 括號前面的數字
         const percentMatch = cleanText.match(/(\d+)[\[\(]\d+\.?\d*%/);
 
         if (expMatch) {
@@ -334,7 +330,6 @@ export default function Home() {
         } else if (percentMatch) {
           foundExp = percentMatch[1];
         } else {
-          // 備用：清除所有非數字字元，找出最大值 (避開已經被判定為等級的數字)
           const onlyNums = cleanText.replace(/[^0-9]/g, ' '); 
           const numArr = onlyNums.split(' ').filter(n => n.length > 0).map(Number);
           const validExps = numArr.filter(n => String(n) !== foundLevel);
@@ -344,7 +339,7 @@ export default function Home() {
         }
         if (foundExp) setExpVal(foundExp);
 
-        setMsg('✨ 掃描解析完成！請核對下方數值，如有誤差可直接修改。');
+        setMsg('✨ 掃描解析完成！請檢查 F12 主控台與下方數值。');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動填寫等級與經驗值。');
@@ -419,11 +414,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.38</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.41 (Debug)</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.38)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.41 Debug)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -462,7 +457,7 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.38 終極排版免疫版：</strong>導入「真空壓縮法」，無視畫面區塊斷行與空格，保證能將 ID、LV 與 EXP 連續對準抓出！
+              💡 <strong>v3.41 偵錯版：</strong>已在主控台（F12）加入原始 OCR 文本印出，上傳後可直接對照檢查！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
