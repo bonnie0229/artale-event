@@ -197,6 +197,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
+  // 🎯 v3.1 核心升級：自動裁切圖片下方 45% 狀態列區域，隔絕聊天室與背景干擾
   function prepareImageForOCR(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -204,20 +205,17 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 2000;
-          let width = img.width;
-          let height = img.height;
-          if (width > height && width > maxDim) {
-            height *= maxDim / width;
-            width = maxDim;
-          } else if (height > maxDim) {
-            width *= maxDim / height;
-            height = maxDim;
-          }
-          canvas.width = width;
-          canvas.height = height;
           const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
+          
+          const cropX = 0;
+          const cropY = img.height * 0.55; // 從畫面中下方開始
+          const cropWidth = img.width;
+          const cropHeight = img.height * 0.45; // 只取底部狀態列區域
+
+          canvas.width = cropWidth;
+          canvas.height = cropHeight;
+          ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+          
           resolve(canvas.toDataURL('image/jpeg', 0.95));
         };
         img.src = e.target.result;
@@ -226,7 +224,7 @@ export default function Home() {
     });
   }
 
-  // 📸 升級版 OCR 智慧辨識 (精準過濾介面干擾)
+  // 📸 v3.1 智慧區塊 OCR 掃描
   async function handleFileChange(e) {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -234,7 +232,7 @@ export default function Home() {
     setScanning(true);
     setCharNotice('');
     setIsManualEdited(false);
-    setMsg('🔍 正在智慧辨識遊戲截圖...');
+    setMsg('🔍 正在精準鎖定底部狀態列並掃描...');
 
     try {
       const ocrImage = await prepareImageForOCR(selectedFile);
@@ -243,13 +241,13 @@ export default function Home() {
         const result = await window.Tesseract.recognize(ocrImage, 'eng');
         const text = result.data.text;
 
-        // 1. 精準抓取等級 (LV) - 支援 LV. 179 或 LV179 格式
+        // 1. 精準抓取等級 (LV)
         const lvMatch = text.match(/LV[\s\.:]*(\d{1,3})/i);
         if (lvMatch && lvMatch[1]) {
           setLevel(lvMatch[1]);
         }
 
-        // 2. 精準抓取經驗值 (EXP) - 排除括號百分比，只抓取純數字
+        // 2. 精準抓取經驗值 (EXP)
         const expRegex = /EXP[\s\.:]*([0-9,]+)/i;
         const expMatch = text.match(expRegex);
         if (expMatch && expMatch[1]) {
@@ -257,19 +255,8 @@ export default function Home() {
           setExpVal(cleanExp);
         }
 
-        // 3. 智慧核對目前登入的遊戲 ID
-        if (loggedInUser) {
-          const cleanText = text.replace(/\s+/g, '').toLowerCase();
-          const cleanUser = loggedInUser.trim().toLowerCase();
-          if (cleanText.includes(cleanUser)) {
-            setCharNotice(`✅ 成功在截圖中確認角色 ID：${loggedInUser}`);
-          } else {
-            setCharNotice(`⚠️ 提示：截圖中未自動完全對應到角色 ID（${loggedInUser}）。若數值有誤請手動修改，送出後將由管理員審核。`);
-            setIsManualEdited(true);
-          }
-        }
-
-        setMsg('✨ 智慧辨識完成！請核對下方數值，如有誤差可直接修改。');
+        setCharNotice(`✅ 已自動擷取底部狀態列數值，請核對下方等級與經驗值是否正確！`);
+        setMsg('✨ 智慧辨識完成！');
       }
     } catch (err) {
       setMsg('圖片讀取完成，請手動確認等級與經驗值。');
@@ -335,11 +322,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.1</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.1)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -378,16 +365,16 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>操作說明：</strong>上傳電腦版或手機版遊戲截圖，系統會自動掃描 LV 與 EXP。如有誤差可直接手動修改，修改後將標記提醒管理員審核！
+              💡 <strong>v3.1 優化說明：</strong>系統現在會自動擷取截圖底部的狀態列（LV 與 EXP），不受上方聊天室或背景干擾。如有誤差可直接手動修改！
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>1. 上傳證明截圖：</label>
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'block', margin: '5px 0 10px 0' }} />
             
-            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在智慧分析圖片中...</p>}
+            {scanning && <p style={{ color: '#d97706', fontSize: '14px', fontWeight: 'bold' }}>⚡ 正在智慧裁切與掃描底部狀態列...</p>}
             
             {charNotice && (
-              <div style={{ background: charNotice.includes('✅') ? '#f0fdf4' : '#fffbe0', border: '1px solid ' + (charNotice.includes('✅') ? '#bbf7d0' : '#fef08a'), color: charNotice.includes('✅') ? '#15803d' : '#854d0e', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', fontSize: '13px', margin: '8px 0' }}>
                 {charNotice}
               </div>
             )}
