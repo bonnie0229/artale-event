@@ -220,7 +220,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 底部狀態列精準鎖定
+  // 🎯 底部狀態列精準鎖定 (已擴大裁切範圍與全寬度，兼容視窗化)
   function prepareCropImage(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -233,14 +233,16 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            cropX = img.width * 0.20;
+            // 手機版：精準鎖定畫面正下方的浮動狀態框
+            cropX = img.width * 0.25;
             cropY = img.height * 0.65;
-            cropWidth = img.width * 0.60;
+            cropWidth = img.width * 0.50;
             cropHeight = img.height * 0.35;
           } else {
+            // 電腦版：擴大至底部 35%、全寬度
             cropX = 0;
             cropY = img.height * 0.65;
-            cropWidth = img.width * 0.75;
+            cropWidth = img.width;
             cropHeight = img.height * 0.35;
           }
 
@@ -274,13 +276,15 @@ export default function Home() {
       const ocrImage = await prepareCropImage(selectedFile, deviceType);
 
       if (window.Tesseract) {
-        const result = await window.Tesseract.recognize(ocrImage, 'eng');
+        // 🚀 載入繁體中文與英文語言包
+        const result = await window.Tesseract.recognize(ocrImage, 'chi_tra+eng');
         const text = result.data.text || '';
 
-        // 1. ID 智慧比對
-        const cleanLoggedUser = loggedInUser.trim().toLowerCase();
-        const cleanOcrText = text.toLowerCase();
+        // 1. ID 智慧比對 (濾除空白防呆)
+        const cleanLoggedUser = loggedInUser.trim().toLowerCase().replace(/\s/g, '');
+        const cleanOcrText = text.toLowerCase().replace(/\s/g, '');
         const hasIdInText = cleanOcrText.includes(cleanLoggedUser);
+        
         if (!hasIdInText && cleanLoggedUser.length > 1) {
           setIdMismatch(true);
           setIsManualEdited(true);
@@ -291,14 +295,16 @@ export default function Home() {
 
         // 2. 🔑 關鍵字錨定抓取等級：尋找 LV 後面的數字
         let foundLevel = '';
-        const lvMatch = text.match(/LV[.\s]*(\d{2,3})/i);
-        if (lvMatch) {
-          const n = Number(lvMatch[1]);
-          if (n >= 120 && n <= 200) foundLevel = String(n);
+        const levelMatch = text.match(/lv[\s\.]*(\d{3})/i);
+        if (levelMatch) {
+          const lvNum = Number(levelMatch[1]);
+          if (lvNum >= 120 && lvNum <= 200) {
+            foundLevel = String(lvNum);
+          }
         }
-        // 備用：若沒抓到 LV 關鍵字，才用全域搜尋
+        // 備用：如果 OCR 沒看懂 LV，退回三位數過濾法
         if (!foundLevel) {
-          const allNums = text.match(/\d+/g);
+          const allNums = text.match(/\b\d{3}\b/g);
           if (allNums) {
             const validLv = allNums.map(Number).filter(n => n >= 120 && n <= 200);
             if (validLv.length > 0) foundLevel = String(validLv[0]);
@@ -306,18 +312,21 @@ export default function Home() {
         }
         if (foundLevel) setLevel(foundLevel);
 
-        // 3. 🔑 關鍵字錨定抓取經驗值：尋找 EXP 後面的數字（自動忽略百分比）
+        // 3. 🔑 關鍵字錨定抓取經驗值：尋找 EXP 或 [百分比] 前面的數字
         let foundExp = '';
-        const expMatch = text.match(/EXP[.\s]*(\d+)/i);
-        if (expMatch) {
-          foundExp = expMatch[1];
-        }
-        // 備用：若沒抓到 EXP 關鍵字，才用大數字過濾
-        if (!foundExp) {
-          const cleanNumsText = text.replace(/[,.]/g, '');
-          const allNums2 = cleanNumsText.match(/\d+/g);
-          if (allNums2) {
-            const validExps = allNums2.map(Number).filter(n => n > 1000 && String(n) !== foundLevel);
+        const expKeywordMatch = text.match(/exp[\s\.\:\-]*(\d+)/i);
+        const percentMatch = text.match(/(\d+)[\s]*[\[\(][\s]*\d+\.?\d*[\s]*%/);
+
+        if (expKeywordMatch) {
+          foundExp = expKeywordMatch[1];
+        } else if (percentMatch) {
+          foundExp = percentMatch[1];
+        } else {
+          // 備用：如果特徵都沒抓到，退回抓最大數字 (避開等級數字)
+          const cleanNumsText = text.replace(/[,.\[\]%]/g, ' '); 
+          const bigNums = cleanNumsText.match(/\b\d+\b/g);
+          if (bigNums) {
+            const validExps = bigNums.map(Number).filter(n => String(n) !== foundLevel);
             if (validExps.length > 0) {
               foundExp = String(Math.max(...validExps));
             }
