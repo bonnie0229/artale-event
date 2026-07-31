@@ -217,7 +217,7 @@ export default function Home() {
     setMsg('已成功登出！');
   }
 
-  // 🎯 固定區域裁切：電腦版掃描「左下方」、手機版掃描「中間下方」
+  // 🎯 精準裁切：電腦版從左下角起算橫向 90%、下半部 50%；手機版涵蓋下方 60%
   function prepareCropImage(file, type) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -230,16 +230,16 @@ export default function Home() {
           let cropX = 0, cropY = 0, cropWidth = img.width, cropHeight = img.height;
 
           if (type === 'mobile') {
-            // 手機版：固定掃描中間下方
-            cropX = img.width * 0.20;
-            cropY = img.height * 0.50;
-            cropWidth = img.width * 0.60;
-            cropHeight = img.height * 0.50;
+            // 手機版：下方 60% 區域
+            cropX = 0;
+            cropY = img.height * 0.40;
+            cropWidth = img.width;
+            cropHeight = img.height * 0.60;
           } else {
-            // 電腦版：固定掃描左下方
+            // 電腦版：左下角起算，橫向 90%、下半部 50%
             cropX = 0;
             cropY = img.height * 0.50;
-            cropWidth = img.width * 0.50;
+            cropWidth = img.width * 0.90;
             cropHeight = img.height * 0.50;
           }
 
@@ -262,11 +262,12 @@ export default function Home() {
     if (!selectedFile) return;
     setFile(selectedFile);
     setScanning(true);
-    setCharNotice(`✅ 身分已鎖定：【${loggedInUser}】（直接採用登入帳號，100% 正確）`);
+    // 明確告知 ID 是直接對應目前登入帳號，不透過 OCR 盲猜
+    setCharNotice(`✅ 提交身分：【${loggedInUser}】（系統直接綁定您目前登入的帳號，不掃描截圖 ID）`);
     setIsManualEdited(false);
     setLevel('');
     setExpVal('');
-    setMsg(`⚡ 正在掃描${deviceType === 'mobile' ? '手機版中間下方' : '電腦版左下方'}區塊...`);
+    setMsg(`⚡ 正在掃描${deviceType === 'mobile' ? '手機版下方' : '電腦版左下角 (橫向90%)'}區塊...`);
 
     try {
       const ocrImage = await prepareCropImage(selectedFile, deviceType);
@@ -366,11 +367,11 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', background: '#f8fafc', minHeight: '100vh' }}>
       <Head>
-        <title>Artale Idotcat 夏日練等大賽 v3.30</title>
+        <title>Artale Idotcat 夏日練等大賽 v3.31</title>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
       </Head>
 
-      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.30)</h1>
+      <h1 style={{ textAlign: 'center', color: '#1e293b', marginBottom: '5px' }}>🍁 Artale Idotcat 夏日練等大賽 (v3.31)</h1>
       <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginTop: '0' }}>
         活動截止：9/8 (二) 7:59 ｜ 截止上傳時間：當天 8:10
       </p>
@@ -409,18 +410,18 @@ export default function Home() {
             <p style={{ margin: '10px 0', fontSize: '15px' }}>目前登入角色：<strong style={{ color: '#2563eb', fontSize: '18px' }}>{loggedInUser}</strong></p>
             
             <div style={{ background: '#e0f2fe', borderLeft: '4px solid #0284c7', color: '#0369a1', padding: '10px 14px', borderRadius: '4px', fontSize: '14px', marginBottom: '15px' }}>
-              💡 <strong>v3.30 固定區域版：</strong>電腦版固定掃描左下方，手機版固定掃描中間下方。ID 直接綁定您登入的身分。若有誤差手動修改即可。
+              💡 <strong>v3.31 精準裁切版：</strong>電腦版固定掃描左下角（橫向 90%），手機版掃描下方區域。ID 直接綁定您登入的身分。若有誤差手動修改即可。
             </div>
 
             <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>選擇截圖來源裝置：</label>
             <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'pc' ? 'bold' : 'normal', color: deviceType === 'pc' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="pc" checked={deviceType === 'pc'} onChange={() => setDeviceType('pc')} style={{ marginRight: '5px' }} />
-                💻 電腦版截圖 (左下方)
+                💻 電腦版截圖 (左下角 90%)
               </label>
               <label style={{ cursor: 'pointer', fontWeight: deviceType === 'mobile' ? 'bold' : 'normal', color: deviceType === 'mobile' ? '#2563eb' : '#334155' }}>
                 <input type="radio" name="device" value="mobile" checked={deviceType === 'mobile'} onChange={() => setDeviceType('mobile')} style={{ marginRight: '5px' }} />
-                📱 手機版截圖 (中間下方)
+                📱 手機版截圖 (下方區域)
               </label>
             </div>
 
